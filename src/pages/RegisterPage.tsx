@@ -301,6 +301,8 @@ export function RegisterPage() {
     try {
       const result = await analyzeSymptoms({
         symptomInput: form.symptomInput,
+        age: form.age,
+        gender: form.gender || null,
       });
 
       const savedResult = await savePatientIntake(

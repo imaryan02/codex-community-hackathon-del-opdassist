@@ -1,9 +1,14 @@
 type StepProgressProps = {
   steps: string[];
   currentStep: number;
+  stepLabel?: string;
 };
 
-export function StepProgress({ steps, currentStep }: StepProgressProps) {
+export function StepProgress({
+  steps,
+  currentStep,
+  stepLabel = "Step",
+}: StepProgressProps) {
   return (
     <ol className="grid gap-2 sm:grid-cols-5">
       {steps.map((step, index) => {
@@ -24,7 +29,7 @@ export function StepProgress({ steps, currentStep }: StepProgressProps) {
             ].join(" ")}
           >
             <p className="text-xs font-bold uppercase tracking-wide">
-              Step {stepNumber}
+              {stepLabel} {stepNumber}
             </p>
             <p className="mt-1 text-sm font-bold">{step}</p>
           </li>

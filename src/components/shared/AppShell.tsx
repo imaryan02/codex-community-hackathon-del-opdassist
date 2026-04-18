@@ -16,7 +16,7 @@ export function AppShell() {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-700 text-sm font-bold text-white">
               AI
             </span>
-            <span>Hospital Intake</span>
+            <span>Ai_hospital_checkin</span>
           </NavLink>
           <nav className="flex flex-wrap gap-2 text-sm font-medium">
             {navItems.map((item) => (

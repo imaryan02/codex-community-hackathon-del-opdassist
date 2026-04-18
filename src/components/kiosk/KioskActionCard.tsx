@@ -7,6 +7,7 @@ type KioskActionCardProps = {
   title: string;
   description: string;
   badge?: string;
+  ctaLabel?: string;
 };
 
 export function KioskActionCard({
@@ -15,6 +16,7 @@ export function KioskActionCard({
   title,
   description,
   badge,
+  ctaLabel = "Start",
 }: KioskActionCardProps) {
   return (
     <Link
@@ -38,7 +40,7 @@ export function KioskActionCard({
         <p className="mt-3 text-base leading-7 text-slate-600">{description}</p>
       </div>
       <span className="mt-6 inline-flex min-h-12 w-fit items-center rounded-xl bg-brand-700 px-5 text-sm font-bold text-white transition group-hover:bg-brand-900">
-        Start
+        {ctaLabel}
       </span>
     </Link>
   );

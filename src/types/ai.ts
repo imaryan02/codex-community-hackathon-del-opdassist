@@ -11,6 +11,8 @@ export type AIIntakeResult = {
 
 export type AnalyzeSymptomsInput = {
   symptomInput: string;
+  age?: number | string;
+  gender?: string | null;
 };
 
 export type AIIntakeReport = {

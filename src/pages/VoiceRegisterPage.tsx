@@ -1,12 +1,18 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { KioskShell, KioskStatePanel, StepProgress } from "../components/kiosk";
+import {
+  KioskShell,
+  KioskStatePanel,
+  LanguageSelector,
+  StepProgress,
+} from "../components/kiosk";
 import { analyzeSymptoms } from "../services/aiService";
 import { savePatientIntake } from "../services/patientService";
 import type { SavedPatientIntake } from "../types/patient";
 
 type VoiceField = "fullName" | "age" | "gender" | "phone" | "symptomInput";
 type VoiceStage = VoiceField | "review";
+type Language = "en" | "hi";
 
 type VoiceFormState = {
   fullName: string;
@@ -30,15 +36,18 @@ type SpeechRecognitionInstance = {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  maxAlternatives?: number;
   start: () => void;
   stop: () => void;
   onresult:
     | null
     | ((event: {
         results: ArrayLike<{
-          0: {
+          [index: number]: {
             transcript: string;
+            confidence?: number;
           };
+          length: number;
           isFinal: boolean;
         }>;
       }) => void);
@@ -62,24 +71,260 @@ const orderedFields: VoiceField[] = [
   "symptomInput",
 ];
 
-const voiceSteps = ["Name", "Age", "Gender", "Phone", "Symptoms"];
+const LANGUAGE_STORAGE_KEY = "preferredKioskLanguage";
 
-const fieldLabels: Record<VoiceField, string> = {
-  fullName: "Full name",
-  age: "Age",
-  gender: "Gender",
-  phone: "Phone",
-  symptomInput: "Symptoms",
+const speechLanguage: Record<Language, string> = {
+  en: "en-IN",
+  hi: "hi-IN",
 };
 
-const prompts: Record<VoiceField, string> = {
-  fullName: "Namaste. Welcome to hospital check-in. Please tell me the patient's full name.",
-  age: "Thank you. Please tell me the patient's age in years.",
-  gender: "Please tell me the patient's gender. You can say female, male, non-binary, or prefer not to say.",
-  phone: "Please tell me the phone number for appointment updates.",
-  symptomInput:
-    "Please describe the main health concern. Include where it hurts, how long it has been happening, and anything that makes it better or worse.",
-};
+function getStoredLanguage(): Language {
+  if (typeof window === "undefined") {
+    return "en";
+  }
+
+  const storedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  return storedLanguage === "hi" ? "hi" : "en";
+}
+
+const voiceCopy = {
+  en: {
+    shell: {
+      eyebrow: "AI voice receptionist",
+      title: "AI receptionist is listening.",
+      subtitle:
+        "The agent runs on the left with voice and chat. The patient form stays open on the right for edits.",
+      touchLink: "Use touch instead",
+    },
+    voiceSteps: ["Name", "Age", "Gender", "Phone", "Symptoms"],
+    fieldLabels: {
+      fullName: "Full name",
+      age: "Age",
+      gender: "Gender",
+      phone: "Phone",
+      symptomInput: "Symptoms",
+    },
+    prompts: {
+      fullName:
+        "Namaste. Welcome to hospital check-in. Please tell me the patient's full name.",
+      age: "Thank you. Please tell me the patient's age in years.",
+      gender:
+        "Please tell me the patient's gender. You can say female, male, non-binary, or prefer not to say.",
+      phone: "Please tell me the phone number for appointment updates.",
+      symptomInput:
+        "Please describe the main health concern. Include where it hurts, how long it has been happening, and anything that makes it better or worse.",
+    },
+    status: {
+      processing: "Processing intake",
+      listening: "Listening",
+      speaking: "Speaking",
+      ready: "Ready",
+    },
+    messages: {
+      capturedPrefix: "Captured. ",
+      reviewCaptured:
+        "I have captured the intake details. Please review the form on the right. If everything looks correct, tap Analyze and Save Intake.",
+      reviewPrompt:
+        "Please review the captured details. You can edit anything manually, or tap Analyze and Save Intake.",
+      reviewBeforeContinuing:
+        "Please review the captured details before continuing.",
+      reviewThenSave:
+        "Please review the intake form on the right, then tap Analyze and Save Intake.",
+      fixBeforeSaving: "Please fix the highlighted details before saving intake.",
+      saving:
+        "Thank you. I am analyzing the symptoms and saving the intake record now.",
+      saved:
+        "Intake saved. I found a recommended specialty. Please review the result.",
+      saveFailed:
+        "I could not save the intake. Please check the message on screen.",
+      aiAnalysisFailed: "AI analysis failed. Please try again.",
+      emptyTranscript: "I could not hear that clearly. Please try again.",
+      symptomReviewHint:
+        "I heard this as a urinary symptom. If you meant vomiting or ulti, please say it again in Hindi mode or edit the symptom field.",
+      echoIgnored:
+        "I ignored my own voice. Please answer after the listening indicator turns on.",
+      recognitionUnavailable:
+        "Browser speech recognition is unavailable here. Use touch registration or edit the fields manually.",
+      recognitionStopped:
+        "Voice capture stopped. Please try again or edit manually.",
+      microphoneFailed:
+        "The microphone could not start. Please allow microphone access and try again.",
+      languageChanged: "English mode selected. I will continue in English.",
+    },
+    validation: {
+      fullNameRequired: "Please capture the patient's full name.",
+      fullNameShort: "Name should be at least 2 characters.",
+      ageRequired: "Please capture the patient's age.",
+      ageInvalid: "Enter a valid age between 1 and 120.",
+      genderRequired: "Please capture the patient's gender.",
+      phoneRequired: "Please capture a phone number.",
+      phoneInvalid: "Enter a valid phone number with 10 to 15 digits.",
+      symptomsRequired: "Please capture the main symptom note.",
+      symptomsShort: "Add a little more symptom detail before continuing.",
+    },
+    ui: {
+      liveBoardEyebrow: "Live intake board",
+      liveBoardTitle: "Edit anything while the agent speaks.",
+      doneCount: "Done",
+      fieldsCount: "Fields",
+      done: "Done",
+      pending: "Pending",
+      symptomPlaceholder: "Symptoms will appear here...",
+      fieldPlaceholderSuffix: "will appear here...",
+      intakeSaved: "Intake saved",
+      patientCodeReady: "Patient code",
+      isReady: "is ready.",
+      back: "Back to welcome",
+      submitIdle: "Analyze and Save Intake",
+      submitBusy: "Analyzing and saving...",
+      agentEyebrow: "AI agent",
+      start: "Start",
+      tapToTalk: "Tap to talk",
+      voiceCheckIn: "Voice check-in",
+      chat: "Chat",
+      reviewChatPlaceholder: "Write your problem or update a detail...",
+      enterPrefix: "Enter",
+      send: "Send",
+      speechUnavailableTitle: "Speech recognition unavailable",
+      speechUnavailableBody:
+        "Use Chrome or Edge for voice capture, or continue with touch registration.",
+      repeat: "Repeat",
+      skip: "Skip",
+      stopVoice: "Stop Voice",
+      finalReview: "Final review",
+      stepLabel: "Step",
+    },
+  },
+  hi: {
+    shell: {
+      eyebrow: "AI वॉइस रिसेप्शनिस्ट",
+      title: "AI रिसेप्शनिस्ट सुन रही है।",
+      subtitle:
+        "बाईं तरफ वॉइस और चैट से बात करें। दाईं तरफ मरीज का फॉर्म खुला रहेगा ताकि आप बदलाव कर सकें।",
+      touchLink: "टच से भरें",
+    },
+    voiceSteps: ["नाम", "उम्र", "लिंग", "फोन", "लक्षण"],
+    fieldLabels: {
+      fullName: "पूरा नाम",
+      age: "उम्र",
+      gender: "लिंग",
+      phone: "फोन",
+      symptomInput: "लक्षण",
+    },
+    prompts: {
+      fullName:
+        "नमस्ते। हॉस्पिटल चेक-इन में आपका स्वागत है। कृपया मरीज का पूरा नाम बताएं।",
+      age: "धन्यवाद। कृपया मरीज की उम्र सालों में बताएं।",
+      gender:
+        "कृपया मरीज का लिंग बताएं। आप महिला, पुरुष, नॉन-बाइनरी, या बताना नहीं चाहते कह सकते हैं।",
+      phone: "कृपया अपॉइंटमेंट अपडेट के लिए फोन नंबर बताएं।",
+      symptomInput:
+        "कृपया मुख्य स्वास्थ्य समस्या बताएं। कहां दर्द है, कितने समय से है, और किससे बेहतर या खराब होता है, यह भी बताएं।",
+    },
+    status: {
+      processing: "इनटेक प्रोसेस हो रहा है",
+      listening: "सुन रही है",
+      speaking: "बोल रही है",
+      ready: "तैयार",
+    },
+    messages: {
+      capturedPrefix: "दर्ज हो गया। ",
+      reviewCaptured:
+        "मैंने इनटेक विवरण दर्ज कर लिए हैं। कृपया दाईं तरफ फॉर्म जांचें। सब सही हो तो विश्लेषण करें और इनटेक सेव करें दबाएं।",
+      reviewPrompt:
+        "कृपया दर्ज की गई जानकारी जांचें। आप कुछ भी मैन्युअली एडिट कर सकते हैं या विश्लेषण करें और इनटेक सेव करें दबा सकते हैं।",
+      reviewBeforeContinuing:
+        "आगे बढ़ने से पहले कृपया दर्ज की गई जानकारी जांचें।",
+      reviewThenSave:
+        "कृपया दाईं तरफ इनटेक फॉर्म जांचें, फिर विश्लेषण करें और इनटेक सेव करें दबाएं।",
+      fixBeforeSaving: "सेव करने से पहले कृपया हाइलाइट की गई जानकारी ठीक करें।",
+      saving:
+        "धन्यवाद। मैं अब लक्षणों का विश्लेषण करके इनटेक रिकॉर्ड सेव कर रही हूं।",
+      saved:
+        "इनटेक सेव हो गया। मैंने सुझाई गई स्पेशलिटी ढूंढ ली है। कृपया परिणाम देखें।",
+      saveFailed:
+        "मैं इनटेक सेव नहीं कर पाई। कृपया स्क्रीन पर दिखा संदेश देखें।",
+      aiAnalysisFailed: "AI विश्लेषण असफल रहा। कृपया फिर कोशिश करें।",
+      emptyTranscript: "मुझे साफ सुनाई नहीं दिया। कृपया फिर से बोलें।",
+      symptomReviewHint:
+        "मुझे यह पेशाब से जुड़ी समस्या जैसा सुनाई दिया। अगर आप उल्टी कहना चाहते थे, तो हिंदी मोड में फिर से बोलें या लक्षण फील्ड एडिट करें।",
+      echoIgnored:
+        "मैंने अपनी आवाज को अनदेखा किया। कृपया लिसनिंग इंडिकेटर चालू होने के बाद जवाब दें।",
+      recognitionUnavailable:
+        "इस ब्राउज़र में स्पीच रिकग्निशन उपलब्ध नहीं है। टच रजिस्ट्रेशन इस्तेमाल करें या फील्ड्स मैन्युअली एडिट करें।",
+      recognitionStopped:
+        "वॉइस कैप्चर रुक गया। कृपया फिर कोशिश करें या मैन्युअली एडिट करें।",
+      microphoneFailed:
+        "माइक्रोफोन शुरू नहीं हो पाया। कृपया माइक्रोफोन अनुमति दें और फिर कोशिश करें।",
+      languageChanged: "हिंदी मोड चुना गया है। मैं अब हिंदी में बात करूंगी।",
+    },
+    validation: {
+      fullNameRequired: "कृपया मरीज का पूरा नाम दर्ज करें।",
+      fullNameShort: "नाम कम से कम 2 अक्षरों का होना चाहिए।",
+      ageRequired: "कृपया मरीज की उम्र दर्ज करें।",
+      ageInvalid: "1 से 120 के बीच सही उम्र दर्ज करें।",
+      genderRequired: "कृपया मरीज का लिंग दर्ज करें।",
+      phoneRequired: "कृपया फोन नंबर दर्ज करें।",
+      phoneInvalid: "10 से 15 अंकों वाला सही फोन नंबर दर्ज करें।",
+      symptomsRequired: "कृपया मुख्य लक्षण दर्ज करें।",
+      symptomsShort: "आगे बढ़ने से पहले लक्षणों की थोड़ी और जानकारी दें।",
+    },
+    ui: {
+      liveBoardEyebrow: "लाइव इनटेक बोर्ड",
+      liveBoardTitle: "AI बोलते समय आप कुछ भी एडिट कर सकते हैं।",
+      doneCount: "पूरे",
+      fieldsCount: "फील्ड्स",
+      done: "पूरा",
+      pending: "बाकी",
+      symptomPlaceholder: "लक्षण यहां दिखेंगे...",
+      fieldPlaceholderSuffix: "यहां दिखेगा...",
+      intakeSaved: "इनटेक सेव हो गया",
+      patientCodeReady: "मरीज कोड",
+      isReady: "तैयार है।",
+      back: "वेलकम पर वापस जाएं",
+      submitIdle: "विश्लेषण करें और इनटेक सेव करें",
+      submitBusy: "विश्लेषण और सेव हो रहा है...",
+      agentEyebrow: "AI एजेंट",
+      start: "शुरू करें",
+      tapToTalk: "बात करने के लिए टैप करें",
+      voiceCheckIn: "वॉइस चेक-इन",
+      chat: "चैट",
+      reviewChatPlaceholder: "अपनी समस्या लिखें या कोई जानकारी बदलें...",
+      enterPrefix: "दर्ज करें",
+      send: "भेजें",
+      speechUnavailableTitle: "स्पीच रिकग्निशन उपलब्ध नहीं है",
+      speechUnavailableBody:
+        "वॉइस कैप्चर के लिए Chrome या Edge इस्तेमाल करें, या टच रजिस्ट्रेशन जारी रखें।",
+      repeat: "दोहराएं",
+      skip: "छोड़ें",
+      stopVoice: "वॉइस बंद करें",
+      finalReview: "अंतिम जांच",
+      stepLabel: "स्टेप",
+    },
+  },
+} satisfies Record<
+  Language,
+  {
+    shell: {
+      eyebrow: string;
+      title: string;
+      subtitle: string;
+      touchLink: string;
+    };
+    voiceSteps: string[];
+    fieldLabels: Record<VoiceField, string>;
+    prompts: Record<VoiceField, string>;
+    status: {
+      processing: string;
+      listening: string;
+      speaking: string;
+      ready: string;
+    };
+    messages: Record<string, string>;
+    validation: Record<string, string>;
+    ui: Record<string, string>;
+  }
+>;
 
 const agentEchoMarkers = [
   "updated full name",
@@ -97,6 +342,11 @@ const agentEchoMarkers = [
   "intake saved",
   "analyzing the symptoms",
   "could not save",
+  "कृपया",
+  "बताएं",
+  "दर्ज हो गया",
+  "इनटेक",
+  "हिंदी मोड",
 ];
 
 function getSpeechRecognition() {
@@ -117,9 +367,140 @@ function wait(milliseconds: number) {
 function normalizeForEchoCheck(value: string) {
   return value
     .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/[^\p{L}\p{N} ]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeIndicDigits(value: string) {
+  const devanagariDigits = "०१२३४५६७८९";
+
+  return value.replace(/[०-९]/g, (digit) =>
+    String(devanagariDigits.indexOf(digit)),
+  );
+}
+
+function getRecognitionCandidates(event: {
+  results: ArrayLike<{
+    [index: number]: {
+      transcript: string;
+      confidence?: number;
+    };
+    length: number;
+  }>;
+}) {
+  return Array.from(event.results)
+    .flatMap((result) =>
+      Array.from({ length: result.length }, (_, index) =>
+        result[index]?.transcript?.trim() ?? "",
+      ),
+    )
+    .filter(Boolean);
+}
+
+function scoreSymptomCandidate(candidate: string) {
+  const text = normalizeForEchoCheck(candidate);
+  let score = 0;
+
+  if (/\b(vomit|vomiting|nausea|ulti|ultee|ulati|matli)\b/.test(text)) {
+    score += 8;
+  }
+
+  if (/(उल्टी|उलटी|मतली|जी मिचला)/.test(candidate)) {
+    score += 8;
+  }
+
+  if (/\b(fever|bukhar|cough|khansi|pain|dard|headache|stomach)\b/.test(text)) {
+    score += 3;
+  }
+
+  if (/(बुखार|खांसी|दर्द|सिर|पेट|सांस|साँस)/.test(candidate)) {
+    score += 3;
+  }
+
+  return score;
+}
+
+function chooseTranscript(field: VoiceField, candidates: string[]) {
+  const usableCandidates = candidates.filter(Boolean);
+
+  if (usableCandidates.length === 0) {
+    return "";
+  }
+
+  if (field !== "symptomInput") {
+    return usableCandidates[0];
+  }
+
+  return usableCandidates.reduce((best, candidate) =>
+    scoreSymptomCandidate(candidate) > scoreSymptomCandidate(best)
+      ? candidate
+      : best,
+  );
+}
+
+function getClinicalSymptomHint(value: string) {
+  const normalized = normalizeForEchoCheck(value);
+
+  if (
+    /\b(vomit|vomiting|nausea|ulti|ultee|ulati|matli)\b/.test(normalized) ||
+    /(उल्टी|उलटी|मतली|जी मिचला)/.test(value)
+  ) {
+    return "Vomiting / उल्टी";
+  }
+
+  if (/\b(fever|bukhar)\b/.test(normalized) || /बुखार/.test(value)) {
+    return "Fever / बुखार";
+  }
+
+  if (/\b(cough|khansi)\b/.test(normalized) || /खांसी/.test(value)) {
+    return "Cough / खांसी";
+  }
+
+  if (
+    /\b(stomach pain|pet dard|abdominal pain)\b/.test(normalized) ||
+    /(पेट.*दर्द|दर्द.*पेट)/.test(value)
+  ) {
+    return "Stomach pain / पेट दर्द";
+  }
+
+  if (
+    /\b(headache|sir dard)\b/.test(normalized) ||
+    /(सिर.*दर्द|दर्द.*सिर)/.test(value)
+  ) {
+    return "Headache / सिर दर्द";
+  }
+
+  if (
+    /\b(breath|breathing|saans|sans)\b/.test(normalized) ||
+    /(सांस|साँस)/.test(value)
+  ) {
+    return "Breathing difficulty / सांस की दिक्कत";
+  }
+
+  return null;
+}
+
+function normalizeSymptomTranscript(transcript: string) {
+  const hint = getClinicalSymptomHint(transcript);
+
+  if (!hint) {
+    return transcript;
+  }
+
+  return `${hint}. Patient said: ${transcript}`;
+}
+
+function isLikelyHindiVomitingMisheard(transcript: string, language: Language) {
+  if (language !== "hi") {
+    return false;
+  }
+
+  const normalized = normalizeForEchoCheck(transcript);
+  return (
+    /\b(urination|urinating|urine|urinary)\b/.test(normalized) &&
+    !getClinicalSymptomHint(transcript)
+  );
 }
 
 function isLikelyAgentEcho(transcript: string, activePrompt: string) {
@@ -154,19 +535,45 @@ function getNextField(field: VoiceField): VoiceField | null {
 function normalizeGender(transcript: string) {
   const text = transcript.toLowerCase();
 
-  if (text.includes("prefer") || text.includes("not say")) {
+  if (
+    text.includes("prefer") ||
+    text.includes("not say") ||
+    text.includes("नहीं बताना") ||
+    text.includes("बताना नहीं")
+  ) {
     return "Prefer not to say";
   }
 
-  if (text.includes("non") || text.includes("binary")) {
+  if (
+    text.includes("non") ||
+    text.includes("binary") ||
+    text.includes("नॉन") ||
+    text.includes("बाइनरी")
+  ) {
     return "Non-binary";
   }
 
-  if (text.includes("female") || text.includes("woman") || text.includes("girl")) {
+  if (
+    text.includes("female") ||
+    text.includes("woman") ||
+    text.includes("girl") ||
+    text.includes("महिला") ||
+    text.includes("स्त्री") ||
+    text.includes("लड़की") ||
+    text.includes("लड़की")
+  ) {
     return "Female";
   }
 
-  if (text.includes("male") || text.includes("man") || text.includes("boy")) {
+  if (
+    text.includes("male") ||
+    text.includes("man") ||
+    text.includes("boy") ||
+    text.includes("पुरुष") ||
+    text.includes("आदमी") ||
+    text.includes("लड़का") ||
+    text.includes("लड़का")
+  ) {
     return "Male";
   }
 
@@ -174,7 +581,7 @@ function normalizeGender(transcript: string) {
 }
 
 function normalizeTranscript(field: VoiceField, transcript: string) {
-  const cleaned = transcript.replace(/\s+/g, " ").trim();
+  const cleaned = normalizeIndicDigits(transcript).replace(/\s+/g, " ").trim();
 
   if (field === "age") {
     const ageMatch = cleaned.match(/\d{1,3}/);
@@ -190,40 +597,47 @@ function normalizeTranscript(field: VoiceField, transcript: string) {
     return digits.length >= 6 ? digits : cleaned;
   }
 
+  if (field === "symptomInput") {
+    return normalizeSymptomTranscript(cleaned);
+  }
+
   return cleaned;
 }
 
-function validateForm(form: VoiceFormState) {
+function validateForm(
+  form: VoiceFormState,
+  validation: typeof voiceCopy.en.validation,
+) {
   const errors: VoiceFormErrors = {};
-  const parsedAge = Number(form.age);
-  const phoneDigits = form.phone.replace(/\D/g, "");
+  const parsedAge = Number(normalizeIndicDigits(form.age));
+  const phoneDigits = normalizeIndicDigits(form.phone).replace(/\D/g, "");
 
   if (!form.fullName.trim()) {
-    errors.fullName = "Please capture the patient's full name.";
+    errors.fullName = validation.fullNameRequired;
   } else if (form.fullName.trim().length < 2) {
-    errors.fullName = "Name should be at least 2 characters.";
+    errors.fullName = validation.fullNameShort;
   }
 
   if (!form.age.trim()) {
-    errors.age = "Please capture the patient's age.";
+    errors.age = validation.ageRequired;
   } else if (!Number.isInteger(parsedAge) || parsedAge < 1 || parsedAge > 120) {
-    errors.age = "Enter a valid age between 1 and 120.";
+    errors.age = validation.ageInvalid;
   }
 
   if (!form.gender.trim()) {
-    errors.gender = "Please capture the patient's gender.";
+    errors.gender = validation.genderRequired;
   }
 
   if (!form.phone.trim()) {
-    errors.phone = "Please capture a phone number.";
+    errors.phone = validation.phoneRequired;
   } else if (phoneDigits.length < 10 || phoneDigits.length > 15) {
-    errors.phone = "Enter a valid phone number with 10 to 15 digits.";
+    errors.phone = validation.phoneInvalid;
   }
 
   if (!form.symptomInput.trim()) {
-    errors.symptomInput = "Please capture the main symptom note.";
+    errors.symptomInput = validation.symptomsRequired;
   } else if (form.symptomInput.trim().length < 12) {
-    errors.symptomInput = "Add a little more symptom detail before continuing.";
+    errors.symptomInput = validation.symptomsShort;
   }
 
   return errors;
@@ -237,28 +651,33 @@ function getCurrentStep(stage: VoiceStage) {
   return getFieldIndex(stage) + 1;
 }
 
-function getStageLabel(stage: VoiceStage) {
-  return stage === "review" ? "Final review" : fieldLabels[stage];
+function getStageLabel(
+  stage: VoiceStage,
+  fieldLabels: Record<VoiceField, string>,
+  finalReviewLabel: string,
+) {
+  return stage === "review" ? finalReviewLabel : fieldLabels[stage];
 }
 
 function getStatusLabel(
   isListening: boolean,
   isSpeaking: boolean,
   isSubmitting: boolean,
+  statusCopy: typeof voiceCopy.en.status,
 ) {
   if (isSubmitting) {
-    return "Processing intake";
+    return statusCopy.processing;
   }
 
   if (isListening) {
-    return "Listening";
+    return statusCopy.listening;
   }
 
   if (isSpeaking) {
-    return "Speaking";
+    return statusCopy.speaking;
   }
 
-  return "Ready";
+  return statusCopy.ready;
 }
 
 function getFirstIncompleteField(form: VoiceFormState): VoiceField {
@@ -268,11 +687,24 @@ function getFirstIncompleteField(form: VoiceFormState): VoiceField {
 function inferFieldFromChat(message: string, fallback: VoiceField): VoiceField {
   const text = message.toLowerCase();
 
-  if (text.includes("phone") || text.includes("mobile") || text.includes("contact")) {
+  if (
+    text.includes("phone") ||
+    text.includes("mobile") ||
+    text.includes("contact") ||
+    text.includes("फोन") ||
+    text.includes("मोबाइल") ||
+    text.includes("संपर्क")
+  ) {
     return "phone";
   }
 
-  if (text.includes("age") || text.includes("years old") || text.includes("year old")) {
+  if (
+    text.includes("age") ||
+    text.includes("years old") ||
+    text.includes("year old") ||
+    text.includes("उम्र") ||
+    text.includes("साल")
+  ) {
     return "age";
   }
 
@@ -280,7 +712,11 @@ function inferFieldFromChat(message: string, fallback: VoiceField): VoiceField {
     text.includes("gender") ||
     text.includes("female") ||
     text.includes("male") ||
-    text.includes("non-binary")
+    text.includes("non-binary") ||
+    text.includes("लिंग") ||
+    text.includes("महिला") ||
+    text.includes("पुरुष") ||
+    text.includes("नॉन")
   ) {
     return "gender";
   }
@@ -292,16 +728,27 @@ function inferFieldFromChat(message: string, fallback: VoiceField): VoiceField {
     text.includes("fever") ||
     text.includes("cough") ||
     text.includes("breath") ||
-    text.includes("vomit")
+    text.includes("vomit") ||
+    text.includes("लक्षण") ||
+    text.includes("समस्या") ||
+    text.includes("दर्द") ||
+    text.includes("बुखार") ||
+    text.includes("खांसी") ||
+    text.includes("सांस") ||
+    text.includes("उल्टी")
   ) {
     return "symptomInput";
   }
 
   if (
     text.includes("name") ||
+    text.includes("नाम") ||
     text.startsWith("i am ") ||
     text.startsWith("i'm ") ||
-    text.startsWith("patient is ")
+    text.startsWith("patient is ") ||
+    text.startsWith("मैं ") ||
+    text.startsWith("मेरा नाम ") ||
+    text.startsWith("मरीज ")
   ) {
     return "fullName";
   }
@@ -310,11 +757,14 @@ function inferFieldFromChat(message: string, fallback: VoiceField): VoiceField {
 }
 
 function cleanChatValue(field: VoiceField, message: string) {
-  const cleaned = message.replace(/\s+/g, " ").trim();
+  const cleaned = normalizeIndicDigits(message).replace(/\s+/g, " ").trim();
 
   if (field === "fullName") {
     return cleaned
-      .replace(/^(my name is|name is|patient name is|patient is|i am|i'm|this is)\s+/i, "")
+      .replace(
+        /^(my name is|name is|patient name is|patient is|i am|i'm|this is|मेरा नाम|नाम|मरीज का नाम|मरीज|मैं)\s+/i,
+        "",
+      )
       .trim();
   }
 
@@ -331,13 +781,20 @@ function cleanChatValue(field: VoiceField, message: string) {
     return normalizeGender(cleaned);
   }
 
-  return cleaned
-    .replace(/^(my symptoms are|symptoms are|symptom is|main concern is|concern is|problem is)\s+/i, "")
+  const symptomText = cleaned
+    .replace(
+      /^(my symptoms are|symptoms are|symptom is|main concern is|concern is|problem is|मेरे लक्षण|लक्षण|मुख्य समस्या|समस्या|दिक्कत)\s+/i,
+      "",
+    )
     .trim();
+
+  return normalizeSymptomTranscript(symptomText);
 }
 
 export function VoiceRegisterPage() {
   const navigate = useNavigate();
+  const [language, setLanguage] = useState<Language>(getStoredLanguage);
+  const copy = voiceCopy[language];
   const [form, setForm] = useState<VoiceFormState>(initialFormState);
   const [errors, setErrors] = useState<VoiceFormErrors>({});
   const [stage, setStage] = useState<VoiceStage>("fullName");
@@ -345,7 +802,7 @@ export function VoiceRegisterPage() {
     {
       id: "agent-full-name-question",
       sender: "agent",
-      text: prompts.fullName,
+      text: voiceCopy[getStoredLanguage()].prompts.fullName,
     },
   ]);
   const [chatDraft, setChatDraft] = useState("");
@@ -359,6 +816,7 @@ export function VoiceRegisterPage() {
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const lastSpokenTextRef = useRef("");
   const listenBlockedUntilRef = useRef(0);
+  const hasMountedRef = useRef(false);
 
   const speechSupported = useMemo(() => {
     if (typeof window === "undefined") {
@@ -384,6 +842,27 @@ export function VoiceRegisterPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
+    recognitionRef.current?.stop();
+    if (speechOutputSupported) {
+      window.speechSynthesis.cancel();
+    }
+    setIsListening(false);
+    setIsSpeaking(false);
+    setVoiceError(null);
+
+    const currentPrompt =
+      stage === "review" ? copy.messages.reviewPrompt : copy.prompts[stage];
+    void speak(`${copy.messages.languageChanged} ${currentPrompt}`);
+  }, [language]);
 
   const updateField = (field: keyof VoiceFormState, value: string) => {
     setForm((current) => ({
@@ -431,7 +910,7 @@ export function VoiceRegisterPage() {
     return new Promise<void>((resolve) => {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "en-IN";
+      utterance.lang = speechLanguage[language];
       utterance.rate = 0.92;
       utterance.pitch = 1;
       utterance.onstart = () => setIsSpeaking(true);
@@ -456,27 +935,28 @@ export function VoiceRegisterPage() {
     appendChatMessage("patient", transcript);
     updateField(field, normalizedValue);
 
+    if (field === "symptomInput" && isLikelyHindiVomitingMisheard(transcript, language)) {
+      setVoiceError(copy.messages.symptomReviewHint);
+      appendChatMessage("agent", copy.messages.symptomReviewHint);
+    }
+
     if (nextField) {
       setStage(nextField);
       window.setTimeout(() => {
-        void askAndListen(nextField, "Captured. ");
+        void askAndListen(nextField, copy.messages.capturedPrefix);
       }, 650);
       return;
     }
 
     setStage("review");
     window.setTimeout(() => {
-      void speak(
-        "I have captured the intake details. Please review the form on the right. If everything looks correct, tap Analyze and Save Intake.",
-      );
+      void speak(copy.messages.reviewCaptured);
     }, 650);
   };
 
   const startListening = (field: VoiceField) => {
     if (!speechSupported) {
-      setVoiceError(
-        "Browser speech recognition is unavailable here. Use touch registration or edit the fields manually.",
-      );
+      setVoiceError(copy.messages.recognitionUnavailable);
       return;
     }
 
@@ -490,25 +970,24 @@ export function VoiceRegisterPage() {
       const recognition = new Recognition();
       recognition.continuous = false;
       recognition.interimResults = false;
-      recognition.lang = "en-IN";
+      recognition.lang = speechLanguage[language];
+      recognition.maxAlternatives = 5;
 
       recognition.onresult = (event) => {
-        const transcript = Array.from(event.results)
-          .map((result) => result[0].transcript)
-          .join(" ")
-          .trim();
+        const transcript = chooseTranscript(
+          field,
+          getRecognitionCandidates(event),
+        );
 
         setIsListening(false);
 
         if (!transcript) {
-          setVoiceError("I could not hear that clearly. Please try again.");
+          setVoiceError(copy.messages.emptyTranscript);
           return;
         }
 
         if (isLikelyAgentEcho(transcript, lastSpokenTextRef.current)) {
-          setVoiceError(
-            "I ignored my own voice. Please answer after the listening indicator turns on.",
-          );
+          setVoiceError(copy.messages.echoIgnored);
           return;
         }
 
@@ -519,8 +998,8 @@ export function VoiceRegisterPage() {
         setIsListening(false);
         setVoiceError(
           event?.error
-            ? `Voice capture stopped: ${event.error}. Please try again or edit manually.`
-            : "Voice capture stopped. Please try again or edit manually.",
+            ? `${copy.messages.recognitionStopped} (${event.error})`
+            : copy.messages.recognitionStopped,
         );
       };
 
@@ -540,25 +1019,21 @@ export function VoiceRegisterPage() {
       }, Math.max(0, listenBlockedUntilRef.current - Date.now()));
     } catch {
       setIsListening(false);
-      setVoiceError(
-        "The microphone could not start. Please allow microphone access and try again.",
-      );
+      setVoiceError(copy.messages.microphoneFailed);
     }
   };
 
   const askAndListen = async (field: VoiceField, prefix = "") => {
     setStage(field);
     setVoiceError(null);
-    await speak(`${prefix}${prompts[field]}`);
+    await speak(`${prefix}${copy.prompts[field]}`);
     await wait(200);
     startListening(field);
   };
 
   const repeatCurrentQuestion = () => {
     if (stage === "review") {
-      void speak(
-        "Please review the captured details. You can edit anything manually, or tap Analyze and Save Intake.",
-      );
+      void speak(copy.messages.reviewPrompt);
       return;
     }
 
@@ -582,7 +1057,7 @@ export function VoiceRegisterPage() {
     const nextField = getNextField(stage);
     if (!nextField) {
       setStage("review");
-      void speak("Please review the captured details before continuing.");
+      void speak(copy.messages.reviewBeforeContinuing);
       return;
     }
 
@@ -610,16 +1085,14 @@ export function VoiceRegisterPage() {
       if (nextField) {
         setStage(nextField);
         window.setTimeout(() => {
-          void speak(prompts[nextField]);
+          void speak(copy.prompts[nextField]);
         }, 150);
         return;
       }
 
       setStage("review");
       window.setTimeout(() => {
-        void speak(
-          "Please review the intake form on the right, then tap Analyze and Save Intake.",
-        );
+        void speak(copy.messages.reviewThenSave);
       }, 150);
     }
   };
@@ -631,32 +1104,32 @@ export function VoiceRegisterPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextErrors = validateForm(form);
+    const nextErrors = validateForm(form, copy.validation);
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
-      setVoiceError("Please fix the highlighted details before saving intake.");
-      void speak("Please fix the highlighted details before saving intake.");
+      setVoiceError(copy.messages.fixBeforeSaving);
+      void speak(copy.messages.fixBeforeSaving);
       return;
     }
 
     setIsSubmitting(true);
     setVoiceError(null);
-    await speak(
-      "Thank you. I am analyzing the symptoms and saving the intake record now.",
-    );
+    await speak(copy.messages.saving);
 
     try {
       const result = await analyzeSymptoms({
         symptomInput: form.symptomInput,
+        age: normalizeIndicDigits(form.age),
+        gender: form.gender.trim() || null,
       });
 
       const savedResult = await savePatientIntake(
         {
           full_name: form.fullName.trim(),
-          age: Number(form.age),
+          age: Number(normalizeIndicDigits(form.age)),
           gender: form.gender.trim() || null,
-          phone: form.phone.trim() || null,
+          phone: normalizeIndicDigits(form.phone).trim() || null,
           symptom_input: form.symptomInput.trim(),
           input_mode: "voice",
         },
@@ -665,9 +1138,7 @@ export function VoiceRegisterPage() {
 
       setSavedIntake(savedResult);
       localStorage.setItem("latestIntakeResult", JSON.stringify(savedResult));
-      await speak(
-        "Intake saved. I found a recommended specialty. Please review the result.",
-      );
+      await speak(copy.messages.saved);
       navigate("/recommendation", {
         state: {
           intakeResult: savedResult,
@@ -677,39 +1148,51 @@ export function VoiceRegisterPage() {
       const message =
         error instanceof Error
           ? error.message
-          : "AI analysis failed. Please try again.";
+          : copy.messages.aiAnalysisFailed;
       setVoiceError(message);
-      void speak("I could not save the intake. Please check the message on screen.");
+      void speak(copy.messages.saveFailed);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const currentStep = getCurrentStep(stage);
-  const statusLabel = getStatusLabel(isListening, isSpeaking, isSubmitting);
+  const statusLabel = getStatusLabel(
+    isListening,
+    isSpeaking,
+    isSubmitting,
+    copy.status,
+  );
   const completedCount = orderedFields.filter((field) => form[field].trim()).length;
   const recentChatMessages = chatMessages.slice(-4);
   const chatPlaceholder =
     stage === "review"
-      ? "Write your problem or update a detail..."
-      : `Enter ${fieldLabels[stage].toLowerCase()}...`;
+      ? copy.ui.reviewChatPlaceholder
+      : `${copy.ui.enterPrefix} ${copy.fieldLabels[stage].toLowerCase()}...`;
 
   return (
     <KioskShell
-      eyebrow="AI voice receptionist"
-      title="AI receptionist is listening."
-      subtitle="The agent runs on the left with voice and chat. The patient form stays open on the right for edits."
+      eyebrow={copy.shell.eyebrow}
+      title={copy.shell.title}
+      subtitle={copy.shell.subtitle}
       actions={
-        <Link
-          to="/register/manual"
-          className="inline-flex min-h-12 items-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-brand-900 shadow-sm transition hover:bg-cyan-50"
-        >
-          Use touch instead
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <LanguageSelector value={language} onChange={setLanguage} />
+          <Link
+            to="/register/manual"
+            className="inline-flex min-h-12 items-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-brand-900 shadow-sm transition hover:bg-cyan-50"
+          >
+            {copy.shell.touchLink}
+          </Link>
+        </div>
       }
     >
       <div className="mb-6">
-        <StepProgress steps={voiceSteps} currentStep={currentStep} />
+        <StepProgress
+          steps={copy.voiceSteps}
+          currentStep={currentStep}
+          stepLabel={copy.ui.stepLabel}
+        />
       </div>
 
       <div className="voice-kiosk-layout">
@@ -721,10 +1204,10 @@ export function VoiceRegisterPage() {
           <div className="flex flex-col gap-3 border-b border-cyan-100 bg-gradient-to-r from-white to-cyan-50 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
             <div>
                 <p className="text-sm font-bold uppercase tracking-wide text-brand-700">
-                  Live intake board
+                  {copy.ui.liveBoardEyebrow}
                 </p>
                 <h2 className="mt-2 text-3xl font-bold text-slate-950">
-                  Edit anything while the agent speaks.
+                  {copy.ui.liveBoardTitle}
                 </h2>
               </div>
               <div className="grid grid-cols-2 gap-2 text-center">
@@ -733,7 +1216,7 @@ export function VoiceRegisterPage() {
                     {completedCount}
                   </p>
                   <p className="text-xs font-bold uppercase text-slate-500">
-                    Done
+                    {copy.ui.doneCount}
                 </p>
               </div>
               <div className="rounded-lg border border-white bg-white px-4 py-2 shadow-sm">
@@ -741,7 +1224,7 @@ export function VoiceRegisterPage() {
                   {orderedFields.length}
                 </p>
                 <p className="text-xs font-bold uppercase text-slate-500">
-                  Fields
+                  {copy.ui.fieldsCount}
                 </p>
               </div>
             </div>
@@ -767,7 +1250,7 @@ export function VoiceRegisterPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-base font-bold text-slate-900">
-                      {fieldLabels[field]}
+                      {copy.fieldLabels[field]}
                     </span>
                     <span
                       className={[
@@ -777,7 +1260,7 @@ export function VoiceRegisterPage() {
                           : "bg-white text-slate-500",
                       ].join(" ")}
                     >
-                      {isComplete ? "Done" : "Pending"}
+                      {isComplete ? copy.ui.done : copy.ui.pending}
                     </span>
                   </div>
 
@@ -786,14 +1269,14 @@ export function VoiceRegisterPage() {
                       value={form[field]}
                       onChange={(event) => updateField(field, event.target.value)}
                       className="mt-3 min-h-32 w-full resize-y rounded-lg border border-slate-300 bg-white px-4 py-3 text-base leading-7 text-slate-950 outline-none transition focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
-                      placeholder="Symptoms will appear here..."
+                      placeholder={copy.ui.symptomPlaceholder}
                     />
                   ) : (
                     <input
                       value={form[field]}
                       onChange={(event) => updateField(field, event.target.value)}
                       className="mt-3 min-h-14 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-950 outline-none transition focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
-                      placeholder={`${fieldLabels[field]} will appear here...`}
+                      placeholder={`${copy.fieldLabels[field]} ${copy.ui.fieldPlaceholderSuffix}`}
                       inputMode={field === "age" || field === "phone" ? "numeric" : "text"}
                     />
                   )}
@@ -810,8 +1293,9 @@ export function VoiceRegisterPage() {
 
           {savedIntake ? (
             <div className="px-5 pb-5 sm:px-6">
-              <KioskStatePanel tone="success" title="Intake saved">
-                Patient code {savedIntake.patient_code} is ready.
+              <KioskStatePanel tone="success" title={copy.ui.intakeSaved}>
+                {copy.ui.patientCodeReady} {savedIntake.patient_code}{" "}
+                {copy.ui.isReady}
               </KioskStatePanel>
             </div>
           ) : null}
@@ -821,14 +1305,14 @@ export function VoiceRegisterPage() {
               to="/"
               className="inline-flex min-h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-100"
             >
-              Back to welcome
+              {copy.ui.back}
             </Link>
             <button
               type="submit"
               disabled={isSubmitting}
               className="inline-flex min-h-14 items-center justify-center rounded-lg bg-brand-700 px-7 text-base font-bold text-white shadow-sm transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              {isSubmitting ? "Analyzing and saving..." : "Analyze and Save Intake"}
+              {isSubmitting ? copy.ui.submitBusy : copy.ui.submitIdle}
             </button>
           </div>
         </form>
@@ -839,10 +1323,14 @@ export function VoiceRegisterPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-bold uppercase text-brand-700">
-                    AI agent
+                    {copy.ui.agentEyebrow}
                   </p>
                   <h2 className="mt-1 text-2xl font-black text-slate-950">
-                    {getStageLabel(stage)}
+                    {getStageLabel(
+                      stage,
+                      copy.fieldLabels,
+                      copy.ui.finalReview,
+                    )}
                   </h2>
                 </div>
                 <span
@@ -879,11 +1367,11 @@ export function VoiceRegisterPage() {
                 <span className="text-5xl font-black text-brand-900">AI</span>
                 <span className="mt-2 text-sm font-black uppercase tracking-wide text-slate-500">
                   {stage === "fullName" && !form.fullName
-                    ? "Start"
-                    : "Tap to talk"}
+                    ? copy.ui.start
+                    : copy.ui.tapToTalk}
                 </span>
                 <span className="mt-1 text-xs font-bold text-slate-500">
-                  Voice check-in
+                  {copy.ui.voiceCheckIn}
                 </span>
               </button>
 
@@ -909,7 +1397,9 @@ export function VoiceRegisterPage() {
 
               <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                  <p className="text-base font-black text-slate-950">Chat</p>
+                  <p className="text-base font-black text-slate-950">
+                    {copy.ui.chat}
+                  </p>
                   <span
                     className={[
                       "h-3 w-3 rounded-full",
@@ -959,7 +1449,7 @@ export function VoiceRegisterPage() {
                     type="submit"
                     className="min-h-12 rounded-lg bg-brand-700 px-5 text-base font-black text-white transition hover:bg-brand-900"
                   >
-                    Send
+                    {copy.ui.send}
                   </button>
                 </form>
               </div>
@@ -974,10 +1464,9 @@ export function VoiceRegisterPage() {
                 <div className="mt-4">
                   <KioskStatePanel
                     tone="warning"
-                    title="Speech recognition unavailable"
+                    title={copy.ui.speechUnavailableTitle}
                   >
-                    Use Chrome or Edge for voice capture, or continue with touch
-                    registration.
+                    {copy.ui.speechUnavailableBody}
                   </KioskStatePanel>
                 </div>
               ) : null}
@@ -989,7 +1478,7 @@ export function VoiceRegisterPage() {
                   disabled={isListening || isSubmitting}
                   className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
                 >
-                  Repeat
+                  {copy.ui.repeat}
                 </button>
                 <button
                   type="button"
@@ -997,14 +1486,14 @@ export function VoiceRegisterPage() {
                   disabled={stage === "review" || isListening || isSubmitting}
                   className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
                 >
-                  Skip
+                  {copy.ui.skip}
                 </button>
                 <button
                   type="button"
                   onClick={stopVoice}
                   className="col-span-2 min-h-12 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white transition hover:bg-slate-700"
                 >
-                  Stop Voice
+                  {copy.ui.stopVoice}
                 </button>
               </div>
             </div>
