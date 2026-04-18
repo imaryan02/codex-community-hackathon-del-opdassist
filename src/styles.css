@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+}
+
+@layer components {
+  .app-card {
+    @apply rounded-lg border border-slate-200 bg-white shadow-sm;
+  }
+
+  .app-eyebrow {
+    @apply text-sm font-semibold uppercase tracking-wide text-brand-700;
+  }
+
+  .app-title {
+    @apply text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl;
+  }
+
+  .app-muted {
+    @apply text-sm leading-6 text-slate-600;
+  }
+
+  .app-primary-button {
+    @apply rounded-lg bg-brand-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400;
+  }
+
+  .app-secondary-button {
+    @apply rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-100;
+  }
+
+  .app-state-info {
+    @apply rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600;
+  }
+
+  .app-state-error {
+    @apply rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700;
+  }
+
+  .app-state-success {
+    @apply rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800;
+  }
+
+  .app-state-warning {
+    @apply rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800;
+  }
+
+  .voice-kiosk-layout {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  @media (min-width: 1024px) {
+    .voice-kiosk-layout {
+      grid-template-columns: minmax(300px, 30%) minmax(0, 70%);
+      align-items: start;
+    }
+  }
+}
