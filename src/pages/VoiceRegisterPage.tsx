@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { KioskShell, KioskStatePanel, StepProgress } from "../components/kiosk";
+import { KioskStatePanel, StepProgress } from "../components/kiosk";
 import { analyzeSymptoms } from "../services/aiService";
 import { savePatientIntake } from "../services/patientService";
 import type { SavedPatientIntake } from "../types/patient";
@@ -70,6 +70,14 @@ const fieldLabels: Record<VoiceField, string> = {
   gender: "Gender",
   phone: "Phone",
   symptomInput: "Symptoms",
+};
+
+const fieldIcons: Record<VoiceField, string> = {
+  fullName: "01",
+  age: "02",
+  gender: "03",
+  phone: "04",
+  symptomInput: "05",
 };
 
 const prompts: Record<VoiceField, string> = {
@@ -247,7 +255,7 @@ function getStatusLabel(
   isSubmitting: boolean,
 ) {
   if (isSubmitting) {
-    return "Processing intake";
+    return "Processing";
   }
 
   if (isListening) {
@@ -336,6 +344,30 @@ function cleanChatValue(field: VoiceField, message: string) {
     .trim();
 }
 
+function MicWaveform({ active }: { active: boolean }) {
+  const bars = [38, 68, 52, 84, 60, 78, 44, 70, 36, 80, 50, 72];
+  return (
+    <div className="flex h-10 items-end justify-center gap-[3px]">
+      {bars.map((height, index) => (
+        <span
+          key={index}
+          className={[
+            "w-1.5 rounded-full transition-all duration-300",
+            active ? "bg-brand-600" : "bg-slate-300",
+          ].join(" ")}
+          style={{
+            height: active ? `${height}%` : "25%",
+            animationDelay: `${index * 60}ms`,
+            transition: active
+              ? `height ${200 + index * 40}ms ease-in-out`
+              : "height 300ms ease-out",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function VoiceRegisterPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState<VoiceFormState>(initialFormState);
@@ -353,26 +385,19 @@ export function VoiceRegisterPage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [savedIntake, setSavedIntake] = useState<SavedPatientIntake | null>(
-    null,
-  );
+  const [savedIntake, setSavedIntake] = useState<SavedPatientIntake | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const lastSpokenTextRef = useRef("");
   const listenBlockedUntilRef = useRef(0);
 
   const speechSupported = useMemo(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
+    if (typeof window === "undefined") return false;
     return Boolean(getSpeechRecognition());
   }, []);
 
   const speechOutputSupported = useMemo(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
+    if (typeof window === "undefined") return false;
     return "speechSynthesis" in window;
   }, []);
 
@@ -385,15 +410,13 @@ export function VoiceRegisterPage() {
     };
   }, []);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
   const updateField = (field: keyof VoiceFormState, value: string) => {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-    setErrors((current) => ({
-      ...current,
-      [field]: undefined,
-    }));
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: undefined }));
     setVoiceError(null);
     setSavedIntake(null);
   };
@@ -401,11 +424,9 @@ export function VoiceRegisterPage() {
   const appendChatMessage = (sender: ChatMessage["sender"], text: string) => {
     setChatMessages((current) => {
       const lastMessage = current[current.length - 1];
-
       if (lastMessage?.sender === sender && lastMessage.text === text) {
         return current;
       }
-
       return [
         ...current,
         {
@@ -413,7 +434,7 @@ export function VoiceRegisterPage() {
           sender,
           text,
         },
-      ].slice(-10);
+      ].slice(-12);
     });
   };
 
@@ -481,9 +502,7 @@ export function VoiceRegisterPage() {
     }
 
     const Recognition = getSpeechRecognition();
-    if (!Recognition) {
-      return;
-    }
+    if (!Recognition) return;
 
     try {
       recognitionRef.current?.stop();
@@ -531,10 +550,7 @@ export function VoiceRegisterPage() {
       recognitionRef.current = recognition;
       setVoiceError(null);
       window.setTimeout(() => {
-        if (Date.now() < listenBlockedUntilRef.current) {
-          return;
-        }
-
+        if (Date.now() < listenBlockedUntilRef.current) return;
         setIsListening(true);
         recognition.start();
       }, Math.max(0, listenBlockedUntilRef.current - Date.now()));
@@ -561,7 +577,6 @@ export function VoiceRegisterPage() {
       );
       return;
     }
-
     void askAndListen(stage);
   };
 
@@ -575,9 +590,7 @@ export function VoiceRegisterPage() {
   };
 
   const skipToNext = () => {
-    if (stage === "review") {
-      return;
-    }
+    if (stage === "review") return;
 
     const nextField = getNextField(stage);
     if (!nextField) {
@@ -585,14 +598,11 @@ export function VoiceRegisterPage() {
       void speak("Please review the captured details before continuing.");
       return;
     }
-
     void askAndListen(nextField);
   };
 
   const submitChatMessage = (message: string) => {
-    if (!message) {
-      return;
-    }
+    if (!message) return;
 
     const targetField =
       stage === "review"
@@ -647,9 +657,7 @@ export function VoiceRegisterPage() {
     );
 
     try {
-      const result = await analyzeSymptoms({
-        symptomInput: form.symptomInput,
-      });
+      const result = await analyzeSymptoms({ symptomInput: form.symptomInput });
 
       const savedResult = await savePatientIntake(
         {
@@ -669,9 +677,7 @@ export function VoiceRegisterPage() {
         "Intake saved. I found a recommended specialty. Please review the result.",
       );
       navigate("/recommendation", {
-        state: {
-          intakeResult: savedResult,
-        },
+        state: { intakeResult: savedResult },
       });
     } catch (error) {
       const message =
@@ -688,329 +694,425 @@ export function VoiceRegisterPage() {
   const currentStep = getCurrentStep(stage);
   const statusLabel = getStatusLabel(isListening, isSpeaking, isSubmitting);
   const completedCount = orderedFields.filter((field) => form[field].trim()).length;
-  const recentChatMessages = chatMessages.slice(-4);
   const chatPlaceholder =
     stage === "review"
-      ? "Write your problem or update a detail..."
-      : `Enter ${fieldLabels[stage].toLowerCase()}...`;
+      ? "Write your concern or correct a detail..."
+      : `Type your ${fieldLabels[stage].toLowerCase()} here...`;
+
+  const micButtonState = isListening
+    ? "listening"
+    : isSpeaking
+      ? "speaking"
+      : isSubmitting
+        ? "processing"
+        : "idle";
 
   return (
-    <KioskShell
-      eyebrow="AI voice receptionist"
-      title="AI receptionist is listening."
-      subtitle="The agent runs on the left with voice and chat. The patient form stays open on the right for edits."
-      actions={
-        <Link
-          to="/register/manual"
-          className="inline-flex min-h-12 items-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-brand-900 shadow-sm transition hover:bg-cyan-50"
-        >
-          Use touch instead
-        </Link>
-      }
-    >
-      <div className="mb-6">
-        <StepProgress steps={voiceSteps} currentStep={currentStep} />
+    <div className="min-h-[calc(100vh-5rem)]">
+      <div className="mb-6 rounded-2xl border border-cyan-100 bg-gradient-to-br from-white via-cyan-50/40 to-blue-50/60 p-5 sm:p-7">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-xs font-black text-white">
+                AI
+              </span>
+              <p className="text-sm font-bold uppercase tracking-widest text-brand-700">
+                AI Voice Receptionist
+              </p>
+            </div>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+              Your AI receptionist is ready.
+            </h1>
+            <p className="mt-2 max-w-2xl text-base leading-7 text-slate-600">
+              Tap the microphone to start. The agent collects your details, analyzes symptoms with AI, and routes you to the right specialist automatically.
+            </p>
+          </div>
+          <Link
+            to="/register/manual"
+            className="inline-flex min-h-11 w-fit items-center rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Switch to touch form
+          </Link>
+        </div>
+
+        <div className="mt-5">
+          <StepProgress steps={voiceSteps} currentStep={currentStep} />
+        </div>
       </div>
 
-      <div className="voice-kiosk-layout">
+      <div className="grid gap-5 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr]">
+        <aside className="lg:sticky lg:top-24 lg:self-start">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div
+              className={[
+                "relative overflow-hidden p-6 transition-colors duration-500",
+                micButtonState === "listening"
+                  ? "bg-gradient-to-br from-amber-50 to-orange-50"
+                  : micButtonState === "speaking"
+                    ? "bg-gradient-to-br from-cyan-50 to-blue-50"
+                    : micButtonState === "processing"
+                      ? "bg-gradient-to-br from-slate-50 to-cyan-50"
+                      : "bg-gradient-to-br from-slate-50 to-white",
+              ].join(" ")}
+            >
+              <div className="absolute inset-0 overflow-hidden">
+                <div
+                  className={[
+                    "absolute -top-16 -right-16 h-48 w-48 rounded-full opacity-20 transition-all duration-700",
+                    micButtonState === "listening"
+                      ? "scale-125 bg-amber-300"
+                      : micButtonState === "speaking"
+                        ? "scale-110 bg-cyan-300"
+                        : "scale-100 bg-slate-200",
+                  ].join(" ")}
+                />
+              </div>
+
+              <div className="relative">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                      Current question
+                    </p>
+                    <h2 className="mt-1 text-xl font-black text-slate-950">
+                      {getStageLabel(stage)}
+                    </h2>
+                  </div>
+                  <span
+                    className={[
+                      "rounded-full px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors",
+                      micButtonState === "listening"
+                        ? "bg-amber-100 text-amber-800"
+                        : micButtonState === "speaking"
+                          ? "bg-cyan-100 text-brand-900"
+                          : micButtonState === "processing"
+                            ? "bg-slate-100 text-slate-700"
+                            : "bg-emerald-100 text-emerald-800",
+                    ].join(" ")}
+                  >
+                    {statusLabel}
+                  </span>
+                </div>
+
+                <div className="mt-5 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void askAndListen(stage === "review" ? getFirstIncompleteField(form) : stage)
+                    }
+                    disabled={isListening || isSubmitting}
+                    aria-label={micButtonState === "listening" ? "Listening..." : "Tap to speak"}
+                    className={[
+                      "group relative flex h-40 w-40 flex-col items-center justify-center rounded-full transition-all duration-300 disabled:cursor-not-allowed",
+                      micButtonState === "listening"
+                        ? "scale-105 shadow-[0_0_0_12px_rgba(251,191,36,0.15),0_0_0_24px_rgba(251,191,36,0.07)]"
+                        : micButtonState === "speaking"
+                          ? "shadow-[0_0_0_12px_rgba(6,182,212,0.15),0_0_0_24px_rgba(6,182,212,0.07)]"
+                          : "shadow-[0_0_0_8px_rgba(14,116,144,0.08)] hover:scale-105 hover:shadow-[0_0_0_12px_rgba(14,116,144,0.12),0_0_0_24px_rgba(14,116,144,0.06)]",
+                      micButtonState === "listening"
+                        ? "bg-amber-500"
+                        : micButtonState === "speaking"
+                          ? "bg-brand-600"
+                          : micButtonState === "processing"
+                            ? "bg-slate-400"
+                            : "bg-brand-700",
+                    ].join(" ")}
+                  >
+                    <svg
+                      className={[
+                        "h-12 w-12 transition-transform",
+                        micButtonState === "listening" ? "scale-110" : "",
+                      ].join(" ")}
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        className="text-white/90"
+                        d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"
+                      />
+                      <path
+                        className="text-white/70"
+                        d="M19 10a1 1 0 0 1 2 0 9 9 0 0 1-18 0 1 1 0 1 1 2 0 7 7 0 0 0 14 0z"
+                      />
+                      <path
+                        className="text-white/70"
+                        d="M12 21a1 1 0 0 1 1-1h0a1 1 0 0 1 0 2h0a1 1 0 0 1-1-1z"
+                      />
+                    </svg>
+                    <span className="mt-2 text-xs font-black uppercase tracking-widest text-white/80">
+                      {micButtonState === "listening"
+                        ? "Listening"
+                        : micButtonState === "speaking"
+                          ? "Speaking"
+                          : micButtonState === "processing"
+                            ? "Processing"
+                            : stage === "fullName" && !form.fullName
+                              ? "Tap to start"
+                              : "Tap to speak"}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="mt-5 rounded-xl border border-slate-100 bg-white/80 px-4 py-3">
+                  <MicWaveform active={isListening || isSpeaking} />
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={repeatCurrentQuestion}
+                    disabled={isListening || isSubmitting}
+                    className="flex min-h-10 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white/80 px-2 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                  >
+                    <span className="text-base leading-none">↻</span>
+                    <span className="mt-1">Repeat</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={skipToNext}
+                    disabled={stage === "review" || isListening || isSubmitting}
+                    className="flex min-h-10 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white/80 px-2 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                  >
+                    <span className="text-base leading-none">→</span>
+                    <span className="mt-1">Skip</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopVoice}
+                    className="flex min-h-10 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white/80 px-2 py-2 text-xs font-bold text-slate-700 transition hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+                  >
+                    <span className="text-base leading-none">■</span>
+                    <span className="mt-1">Stop</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-slate-950">Chat</span>
+                  <span className="text-xs text-slate-500">or type your answer</span>
+                </div>
+                <span
+                  className={[
+                    "h-2.5 w-2.5 rounded-full transition-colors",
+                    isListening
+                      ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]"
+                      : isSpeaking
+                        ? "bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.6)]"
+                        : "bg-emerald-400",
+                  ].join(" ")}
+                />
+              </div>
+
+              <div className="max-h-64 min-h-48 space-y-2.5 overflow-y-auto bg-slate-50 p-3">
+                {chatMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={[
+                      "flex",
+                      message.sender === "patient" ? "justify-end" : "justify-start",
+                    ].join(" ")}
+                  >
+                    {message.sender === "agent" && (
+                      <span className="mr-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[10px] font-black text-brand-900">
+                        AI
+                      </span>
+                    )}
+                    <p
+                      className={[
+                        "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-6",
+                        message.sender === "agent"
+                          ? "rounded-tl-sm bg-white text-slate-800 shadow-sm ring-1 ring-slate-100"
+                          : "rounded-tr-sm bg-brand-700 text-white",
+                      ].join(" ")}
+                    >
+                      {message.text}
+                    </p>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+
+              <form
+                onSubmit={handleChatSubmit}
+                className="flex gap-2 border-t border-slate-100 bg-white p-3"
+              >
+                <input
+                  value={chatDraft}
+                  onChange={(event) => setChatDraft(event.target.value)}
+                  className="min-h-11 flex-1 rounded-xl border border-slate-200 px-3.5 text-sm font-semibold text-slate-950 outline-none transition focus:border-brand-600 focus:ring-2 focus:ring-cyan-100"
+                  placeholder={chatPlaceholder}
+                />
+                <button
+                  type="submit"
+                  disabled={!chatDraft.trim()}
+                  className="min-h-11 rounded-xl bg-brand-700 px-4 text-sm font-black text-white transition hover:bg-brand-900 disabled:bg-slate-300"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+
+            {voiceError ? (
+              <div className="p-3 pt-0">
+                <KioskStatePanel tone="error">{voiceError}</KioskStatePanel>
+              </div>
+            ) : null}
+
+            {!speechSupported ? (
+              <div className="p-3 pt-0">
+                <KioskStatePanel tone="warning" title="Voice unavailable">
+                  Use Chrome or Edge for voice capture, or type in the chat above.
+                </KioskStatePanel>
+              </div>
+            ) : null}
+          </div>
+        </aside>
+
         <form
           onSubmit={handleSubmit}
           noValidate
-          className="rounded-lg border border-cyan-100 bg-white shadow-sm lg:order-2"
+          className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
         >
-          <div className="flex flex-col gap-3 border-b border-cyan-100 bg-gradient-to-r from-white to-cyan-50 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
-            <div>
-                <p className="text-sm font-bold uppercase tracking-wide text-brand-700">
-                  Live intake board
+          <div className="border-b border-slate-100 bg-gradient-to-r from-white to-cyan-50/50 p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-brand-700">
+                  Live intake form
                 </p>
-                <h2 className="mt-2 text-3xl font-bold text-slate-950">
-                  Edit anything while the agent speaks.
+                <h2 className="mt-1.5 text-2xl font-black text-slate-950">
+                  Edit while the agent speaks.
                 </h2>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="rounded-lg border border-white bg-white px-4 py-2 shadow-sm">
-                  <p className="text-xl font-black text-brand-900">
-                    {completedCount}
-                  </p>
-                  <p className="text-xs font-bold uppercase text-slate-500">
-                    Done
+                <p className="mt-1 text-sm text-slate-500">
+                  Fields update automatically as the AI captures your responses.
                 </p>
               </div>
-              <div className="rounded-lg border border-white bg-white px-4 py-2 shadow-sm">
-                <p className="text-xl font-black text-brand-900">
-                  {orderedFields.length}
-                </p>
-                <p className="text-xs font-bold uppercase text-slate-500">
-                  Fields
-                </p>
+              <div className="flex gap-3 shrink-0">
+                <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 text-center shadow-sm">
+                  <p className="text-2xl font-black text-brand-900">{completedCount}</p>
+                  <p className="text-xs font-bold uppercase text-slate-400">Done</p>
+                </div>
+                <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 text-center shadow-sm">
+                  <p className="text-2xl font-black text-slate-400">{orderedFields.length}</p>
+                  <p className="text-xs font-bold uppercase text-slate-400">Total</p>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="grid gap-3 p-5 sm:p-6">
+          <div className="flex-1 space-y-3 p-5 sm:p-6">
             {orderedFields.map((field) => {
               const isActive = stage === field;
               const isComplete = Boolean(form[field].trim());
               const isSymptomField = field === "symptomInput";
 
               return (
-                <label
+                <div
                   key={field}
                   className={[
-                    "block rounded-lg border p-4 transition",
+                    "group relative rounded-xl border p-4 transition-all duration-200",
                     isActive
-                      ? "border-brand-600 bg-cyan-50 shadow-sm ring-2 ring-cyan-100"
+                      ? "border-brand-600 bg-cyan-50/60 shadow-sm ring-2 ring-brand-600/10"
                       : isComplete
-                        ? "border-emerald-200 bg-emerald-50"
-                        : "border-slate-200 bg-slate-50",
+                        ? "border-emerald-200 bg-emerald-50/50"
+                        : "border-slate-200 bg-slate-50/80",
                   ].join(" ")}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-base font-bold text-slate-900">
-                      {fieldLabels[field]}
-                    </span>
-                    <span
-                      className={[
-                        "rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wide",
-                        isComplete
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-white text-slate-500",
-                      ].join(" ")}
-                    >
-                      {isComplete ? "Done" : "Pending"}
-                    </span>
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={[
+                          "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black transition-colors",
+                          isActive
+                            ? "bg-brand-700 text-white"
+                            : isComplete
+                              ? "bg-emerald-500 text-white"
+                              : "bg-slate-200 text-slate-500",
+                        ].join(" ")}
+                      >
+                        {isComplete ? "✓" : fieldIcons[field]}
+                      </span>
+                      <span className="text-sm font-bold text-slate-900">
+                        {fieldLabels[field]}
+                      </span>
+                      {isActive && (
+                        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-brand-700">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    {isComplete && !isActive && (
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
+                        Captured
+                      </span>
+                    )}
                   </div>
 
                   {isSymptomField ? (
                     <textarea
                       value={form[field]}
                       onChange={(event) => updateField(field, event.target.value)}
-                      className="mt-3 min-h-32 w-full resize-y rounded-lg border border-slate-300 bg-white px-4 py-3 text-base leading-7 text-slate-950 outline-none transition focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
-                      placeholder="Symptoms will appear here..."
+                      className="min-h-28 w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-7 text-slate-950 outline-none transition focus:border-brand-600 focus:ring-2 focus:ring-cyan-100"
+                      placeholder="Describe the health concern — location, duration, severity..."
                     />
                   ) : (
                     <input
                       value={form[field]}
                       onChange={(event) => updateField(field, event.target.value)}
-                      className="mt-3 min-h-14 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-950 outline-none transition focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
-                      placeholder={`${fieldLabels[field]} will appear here...`}
+                      className="min-h-12 w-full rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-950 outline-none transition focus:border-brand-600 focus:ring-2 focus:ring-cyan-100"
+                      placeholder={`${fieldLabels[field]} will appear as you speak...`}
                       inputMode={field === "age" || field === "phone" ? "numeric" : "text"}
                     />
                   )}
 
                   {errors[field] ? (
-                    <p className="mt-2 text-sm font-semibold text-red-600">
+                    <p className="mt-2 text-xs font-semibold text-red-600">
                       {errors[field]}
                     </p>
                   ) : null}
-                </label>
+                </div>
               );
             })}
           </div>
 
           {savedIntake ? (
-            <div className="px-5 pb-5 sm:px-6">
+            <div className="px-5 pb-0 sm:px-6">
               <KioskStatePanel tone="success" title="Intake saved">
                 Patient code {savedIntake.patient_code} is ready.
               </KioskStatePanel>
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-3 border-t border-cyan-100 bg-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-            <Link
-              to="/"
-              className="inline-flex min-h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-100"
-            >
-              Back to welcome
-            </Link>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex min-h-14 items-center justify-center rounded-lg bg-brand-700 px-7 text-base font-bold text-white shadow-sm transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400"
-            >
-              {isSubmitting ? "Analyzing and saving..." : "Analyze and Save Intake"}
-            </button>
+          <div className="mt-auto border-t border-slate-100 bg-slate-50 p-5 sm:p-6">
+            <div className="flex items-start gap-3 rounded-xl border border-cyan-100 bg-cyan-50/60 p-4 mb-4">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[10px] font-black text-brand-900 mt-0.5">
+                AI
+              </span>
+              <p className="text-sm leading-6 text-slate-700">
+                AI will analyze the symptoms and route the patient to the recommended specialty. A doctor reviews all information during consultation.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Link
+                to="/"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-100"
+              >
+                Back to welcome
+              </Link>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex min-h-12 items-center justify-center rounded-xl bg-brand-700 px-7 text-base font-black text-white shadow-sm transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {isSubmitting ? "Analyzing symptoms..." : "Analyze and Save Intake"}
+              </button>
+            </div>
           </div>
         </form>
-
-        <aside className="lg:order-1 lg:sticky lg:top-28 lg:self-start">
-          <section className="overflow-hidden rounded-lg border border-cyan-100 bg-white shadow-sm">
-            <div className="border-b border-cyan-100 bg-gradient-to-r from-cyan-50 to-white p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-bold uppercase text-brand-700">
-                    AI agent
-                  </p>
-                  <h2 className="mt-1 text-2xl font-black text-slate-950">
-                    {getStageLabel(stage)}
-                  </h2>
-                </div>
-                <span
-                  className={[
-                    "rounded-lg border px-3 py-2 text-xs font-black uppercase",
-                    isListening
-                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                      : isSubmitting
-                        ? "border-cyan-200 bg-cyan-50 text-brand-900"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-800",
-                  ].join(" ")}
-                >
-                  {statusLabel}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-5">
-              <button
-                type="button"
-                onClick={() =>
-                  void askAndListen(stage === "review" ? "fullName" : stage)
-                }
-                disabled={isListening || isSubmitting}
-                className={[
-                  "mx-auto flex h-56 w-56 max-w-full flex-col items-center justify-center rounded-full border-8 bg-white text-center shadow-xl transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70",
-                  isListening
-                    ? "border-amber-300 shadow-amber-100"
-                    : isSpeaking
-                      ? "border-cyan-300 shadow-cyan-100"
-                      : "border-cyan-100 shadow-cyan-50",
-                ].join(" ")}
-              >
-                <span className="text-5xl font-black text-brand-900">AI</span>
-                <span className="mt-2 text-sm font-black uppercase tracking-wide text-slate-500">
-                  {stage === "fullName" && !form.fullName
-                    ? "Start"
-                    : "Tap to talk"}
-                </span>
-                <span className="mt-1 text-xs font-bold text-slate-500">
-                  Voice check-in
-                </span>
-              </button>
-
-              <div className="mt-5 flex h-20 items-end gap-1 rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-3">
-                {[34, 72, 48, 88, 56, 76, 42, 64, 36, 82].map(
-                  (height, index) => (
-                    <span
-                      key={`${height}-${index}`}
-                      className={[
-                        "flex-1 rounded-t bg-brand-600 transition-all",
-                        isListening || isSpeaking
-                          ? "animate-pulse opacity-100"
-                          : "opacity-35",
-                      ].join(" ")}
-                      style={{
-                        height: `${isListening || isSpeaking ? height : Math.max(18, height - 34)}%`,
-                        animationDelay: `${index * 70}ms`,
-                      }}
-                    />
-                  ),
-                )}
-              </div>
-
-              <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                  <p className="text-base font-black text-slate-950">Chat</p>
-                  <span
-                    className={[
-                      "h-3 w-3 rounded-full",
-                      isListening
-                        ? "bg-amber-400"
-                        : isSpeaking
-                          ? "bg-cyan-400"
-                          : "bg-emerald-400",
-                    ].join(" ")}
-                  />
-                </div>
-
-                <div className="min-h-72 max-h-96 space-y-3 overflow-y-auto bg-slate-50 p-4">
-                  {recentChatMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={[
-                        "flex",
-                        message.sender === "patient" ? "justify-end" : "justify-start",
-                      ].join(" ")}
-                    >
-                      <p
-                        className={[
-                          "max-w-[82%] rounded-lg px-4 py-3 text-base font-semibold leading-6",
-                          message.sender === "agent"
-                            ? "bg-white text-slate-800 shadow-sm"
-                            : "bg-brand-700 text-white shadow-sm",
-                        ].join(" ")}
-                      >
-                        {message.text}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <form
-                  onSubmit={handleChatSubmit}
-                  className="grid gap-3 border-t border-slate-200 bg-white p-3"
-                >
-                  <textarea
-                    value={chatDraft}
-                    onChange={(event) => setChatDraft(event.target.value)}
-                    className="min-h-28 w-full resize-y rounded-lg border border-slate-300 px-4 py-3 text-base font-semibold leading-7 text-slate-950 outline-none transition focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
-                    placeholder={chatPlaceholder}
-                  />
-                  <button
-                    type="submit"
-                    className="min-h-12 rounded-lg bg-brand-700 px-5 text-base font-black text-white transition hover:bg-brand-900"
-                  >
-                    Send
-                  </button>
-                </form>
-              </div>
-
-              {voiceError ? (
-                <div className="mt-4">
-                  <KioskStatePanel tone="error">{voiceError}</KioskStatePanel>
-                </div>
-              ) : null}
-
-              {!speechSupported ? (
-                <div className="mt-4">
-                  <KioskStatePanel
-                    tone="warning"
-                    title="Speech recognition unavailable"
-                  >
-                    Use Chrome or Edge for voice capture, or continue with touch
-                    registration.
-                  </KioskStatePanel>
-                </div>
-              ) : null}
-
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={repeatCurrentQuestion}
-                  disabled={isListening || isSubmitting}
-                  className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
-                >
-                  Repeat
-                </button>
-                <button
-                  type="button"
-                  onClick={skipToNext}
-                  disabled={stage === "review" || isListening || isSubmitting}
-                  className="min-h-12 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
-                  onClick={stopVoice}
-                  className="col-span-2 min-h-12 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white transition hover:bg-slate-700"
-                >
-                  Stop Voice
-                </button>
-              </div>
-            </div>
-          </section>
-        </aside>
       </div>
-    </KioskShell>
+    </div>
   );
 }
