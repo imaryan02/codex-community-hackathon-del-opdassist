@@ -8,8 +8,17 @@ export type DoctorSlot = {
   created_at: string;
 };
 
-export type BookingStatus = "confirmed" | "cancelled" | "completed";
-export type ConsultationStatus = "waiting" | "in_consultation" | "completed";
+export type BookingStatus =
+  | "pending_approval"
+  | "confirmed"
+  | "cancelled"
+  | "completed";
+export type ConsultationStatus =
+  | "pending_approval"
+  | "waiting"
+  | "in_consultation"
+  | "completed"
+  | "cancelled";
 
 export type Booking = {
   id: string;

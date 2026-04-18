@@ -57,20 +57,20 @@ export function RecommendationPage() {
     return (
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-          AI recommendation
+          OPD routing
         </p>
         <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
           No intake result found.
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-          Complete patient registration first so the AI summary, recommended
-          specialty, urgency, and patient code can appear here.
+          Complete AI intake first so the department, urgency, and patient code
+          can appear here.
         </p>
         <Link
           to="/register/manual"
           className="mt-6 inline-flex rounded-lg bg-brand-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900"
         >
-          Start patient intake
+          Start AI intake
         </Link>
       </section>
     );
@@ -82,18 +82,18 @@ export function RecommendationPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-              AI recommendation
+              OPD routing result
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              Recommended care path is ready.
+              Department route is ready.
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-              Review the AI routing summary before choosing a doctor and slot.
+              Review the AI summary before generating an OPD token.
             </p>
           </div>
           <div className="w-fit rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs font-semibold uppercase text-slate-500">
-              patient_code
+                patient code
             </p>
             <p className="mt-1 text-lg font-semibold text-slate-950">
               {intakeResult.patient_code}
@@ -102,12 +102,18 @@ export function RecommendationPage() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        AI routing is decision support for the OPD desk. It converts symptoms
+        into a department suggestion and urgency label; the doctor still makes
+        the final clinical decision.
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-500">
-                Recommended specialty
+                Recommended department
               </p>
               <h2 className="mt-2 text-3xl font-semibold text-brand-900">
                 {intakeResult.recommended_specialty_name}
@@ -144,7 +150,7 @@ export function RecommendationPage() {
         </div>
 
         <aside className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-semibold text-slate-950">Saved intake</p>
+          <p className="text-sm font-semibold text-slate-950">OPD intake saved</p>
           <div className="mt-4 space-y-4 text-sm">
             <div>
               <p className="text-xs font-semibold uppercase text-slate-500">
@@ -174,14 +180,14 @@ export function RecommendationPage() {
 
           <div className="mt-6 border-t border-slate-200 pt-5">
             <p className="text-sm leading-6 text-slate-600">
-              Continue when the specialty and urgency look correct.
+              Continue when the department and urgency look correct.
             </p>
             <Link
               to="/booking"
               state={{ intakeResult }}
               className="mt-4 inline-flex w-full justify-center rounded-lg bg-brand-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900"
             >
-              Continue to Doctor Selection
+              Continue to OPD token
             </Link>
           </div>
         </aside>

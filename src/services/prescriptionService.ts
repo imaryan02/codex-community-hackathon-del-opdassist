@@ -1,9 +1,16 @@
+import { getStoredSession } from "../lib/session";
 import { getSupabaseClient } from "../lib/supabase";
 import type { Prescription, PrescriptionInput } from "../types/prescription";
 
 export async function savePrescription(
   input: PrescriptionInput,
 ): Promise<Prescription> {
+  const session = getStoredSession();
+
+  if (session?.role !== "doctor") {
+    throw new Error("Only a signed-in doctor can save prescriptions.");
+  }
+
   const supabase = getSupabaseClient();
 
   const { data, error } = await supabase

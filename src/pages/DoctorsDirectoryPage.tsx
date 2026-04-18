@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getStoredSession } from "../lib/session";
 import { getAllDoctors } from "../services/doctorService";
 import type { DoctorWithSpecialty } from "../types/doctor";
 import type { SavedPatientIntake } from "../types/patient";
@@ -118,6 +119,7 @@ export function DoctorsDirectoryPage() {
   }, [availabilityFilter, doctors, searchTerm, specialtyFilter]);
 
   const handleBookAppointment = (doctor: DoctorWithSpecialty) => {
+    const session = getStoredSession();
     const doctorContext = {
       doctor_id: doctor.id,
       doctor_name: doctor.full_name,
@@ -127,6 +129,13 @@ export function DoctorsDirectoryPage() {
     const intakeResult = getStoredIntakeResult();
 
     localStorage.setItem("preferredDoctorContext", JSON.stringify(doctorContext));
+
+    if (session?.role !== "patient") {
+      navigate("/");
+      return;
+    }
+
+    localStorage.setItem("visitPatientMode", "self");
 
     if (intakeResult?.recommended_specialty_id === doctor.specialty_id) {
       navigate("/booking", {
@@ -150,11 +159,12 @@ export function DoctorsDirectoryPage() {
       <div className="app-card p-6 sm:p-8">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="app-eyebrow">Doctors directory</p>
-            <h1 className="app-title mt-3">Find the right doctor.</h1>
+            <p className="app-eyebrow">Doctor directory</p>
+            <h1 className="app-title mt-3">Doctor and department coverage.</h1>
             <p className="app-muted mt-4 max-w-2xl">
-              Search the hospital team by name, specialty, and availability
-              before starting a patient booking.
+              Search the hospital team by name, department, and availability.
+              Anyone can view this directory; patients must check in before
+              generating an OPD token.
             </p>
           </div>
           <div className="grid gap-3 rounded-lg border border-cyan-100 bg-cyan-50 p-4 sm:grid-cols-2 lg:min-w-[360px]">
@@ -176,6 +186,12 @@ export function DoctorsDirectoryPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        This public directory gives patients and staff visibility before booking.
+        Availability comes from the admin roster; booking still requires patient
+        check-in and AI triage.
       </div>
 
       <div className="app-card p-5 sm:p-6">
@@ -313,7 +329,9 @@ export function DoctorsDirectoryPage() {
                 onClick={() => handleBookAppointment(doctor)}
                 className="app-primary-button mt-5 w-full"
               >
-                Book Appointment
+                {getStoredSession()?.role === "patient"
+                  ? "Start OPD visit"
+                  : "Check in to book"}
               </button>
             </article>
           ))}

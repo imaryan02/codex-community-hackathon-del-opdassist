@@ -11,6 +11,11 @@ type BookingLocationState = {
   preferredDoctorId?: string;
 };
 
+type PreferredDoctorContext = {
+  doctor_id: string;
+  specialty_id: string;
+};
+
 const urgencyStyles = {
   low: "border-emerald-200 bg-emerald-50 text-emerald-700",
   medium: "border-amber-200 bg-amber-50 text-amber-700",
@@ -51,6 +56,28 @@ function getStoredIntakeResult() {
   }
 }
 
+function getStoredPreferredDoctorContext(): PreferredDoctorContext | null {
+  const storedValue = localStorage.getItem("preferredDoctorContext");
+
+  if (!storedValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(storedValue) as Partial<PreferredDoctorContext>;
+
+    return typeof parsed.doctor_id === "string" &&
+      typeof parsed.specialty_id === "string"
+      ? {
+          doctor_id: parsed.doctor_id,
+          specialty_id: parsed.specialty_id,
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatTime(time: string) {
   return time.slice(0, 5);
 }
@@ -63,8 +90,16 @@ export function BookingPage() {
     state?.intakeResult && isSavedPatientIntake(state.intakeResult)
       ? state.intakeResult
       : getStoredIntakeResult();
+  const storedPreferredDoctor = getStoredPreferredDoctorContext();
+  const storedPreferredDoctorId =
+    storedPreferredDoctor &&
+    storedPreferredDoctor.specialty_id === intakeResult?.recommended_specialty_id
+      ? storedPreferredDoctor.doctor_id
+      : null;
   const preferredDoctorId =
-    typeof state?.preferredDoctorId === "string" ? state.preferredDoctorId : null;
+    typeof state?.preferredDoctorId === "string"
+      ? state.preferredDoctorId
+      : storedPreferredDoctorId;
 
   const [doctors, setDoctors] = useState<DoctorWithSpecialty[]>([]);
   const [slots, setSlots] = useState<DoctorSlot[]>([]);
@@ -195,20 +230,20 @@ export function BookingPage() {
     return (
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-          Doctor selection
+          OPD token
         </p>
         <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
           No recommendation found.
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-          Complete patient registration and AI recommendation first so doctors
-          can be matched to the recommended specialty.
+          Complete AI intake first so the patient can be routed to an OPD
+          department.
         </p>
         <Link
           to="/register/manual"
           className="mt-6 inline-flex rounded-lg bg-brand-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900"
         >
-          Start patient intake
+          Start AI intake
         </Link>
       </section>
     );
@@ -220,13 +255,13 @@ export function BookingPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-              Doctor selection
+              OPD token
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              Choose a doctor and today&apos;s slot.
+              Assign an available doctor and OPD time.
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-              Matching doctors are shown for the specialty recommended by AI.
+              The system shows available doctors for the recommended department.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
@@ -240,7 +275,7 @@ export function BookingPage() {
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase text-slate-500">
-                Specialty
+                Department
               </p>
               <p className="mt-1 font-semibold text-brand-900">
                 {intakeResult.recommended_specialty_name}
@@ -261,15 +296,21 @@ export function BookingPage() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        This step turns AI routing into an OPD token request. The patient selects
+        an available doctor and time; admin approval moves the token to the
+        doctor's live queue.
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold text-slate-950">
-                Available doctors
+                Available OPD doctors
               </h2>
               <p className="mt-1 text-sm text-slate-600">
-                Select one doctor to load today&apos;s slots.
+                Select one available doctor to load OPD times.
               </p>
             </div>
             <span className="rounded-lg bg-cyan-50 px-3 py-2 text-xs font-semibold text-brand-900">
@@ -291,7 +332,7 @@ export function BookingPage() {
 
           {!doctorsLoading && !doctorError && doctors.length === 0 ? (
             <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              No doctors are available today for this specialty.
+              No doctors are available today for this department.
             </div>
           ) : null}
 
@@ -336,16 +377,16 @@ export function BookingPage() {
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div>
             <h2 className="text-xl font-semibold text-slate-950">
-              Today&apos;s slots
+              OPD times
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Only unbooked slots for today are shown.
+              Only available OPD times for today are shown.
             </p>
           </div>
 
           {!selectedDoctor ? (
             <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              Select a doctor to view available slots.
+              Select a doctor to view available OPD times.
             </div>
           ) : null}
 
@@ -363,7 +404,7 @@ export function BookingPage() {
 
           {selectedDoctor && !slotsLoading && !slotError && slots.length === 0 ? (
             <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              No unbooked slots are available today for this doctor.
+              No OPD times are available today for this doctor.
             </div>
           ) : null}
 
@@ -407,7 +448,7 @@ export function BookingPage() {
                   {formatTime(selectedSlot.start_time)}.
                 </p>
               ) : (
-                <p>Select a doctor and slot to continue.</p>
+                <p>Select a doctor and OPD time to continue.</p>
               )}
             </div>
             <button
@@ -416,7 +457,7 @@ export function BookingPage() {
               onClick={handleContinue}
               className="mt-4 w-full rounded-lg bg-brand-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              Continue to Confirm Booking
+              Continue to Generate Token
             </button>
           </div>
         </section>

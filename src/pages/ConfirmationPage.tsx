@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { createBooking } from "../services/bookingService";
+import { createBooking, getBookingStatus } from "../services/bookingService";
 import type { BookingConfirmation, BookingDraft } from "../types/booking";
 
 type ConfirmationLocationState = {
@@ -117,7 +117,90 @@ export function ConfirmationPage() {
       ),
   );
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const refreshBookingStatus = useCallback(async () => {
+    if (!confirmation?.booking_id) {
+      return;
+    }
+
+    setIsRefreshingStatus(true);
+    setErrorMessage(null);
+
+    try {
+      const status = await getBookingStatus(confirmation.booking_id);
+      setConfirmation((current) => {
+        if (!current) {
+          return current;
+        }
+
+        if (
+          current.booking_status === status.booking_status &&
+          current.consultation_status === status.consultation_status &&
+          current.token_number === status.token_number
+        ) {
+          return current;
+        }
+
+        const updatedConfirmation = {
+          ...current,
+          booking_status: status.booking_status,
+          consultation_status: status.consultation_status,
+          token_number: status.token_number,
+        };
+
+        localStorage.setItem(
+          "latestBookingConfirmation",
+          JSON.stringify(updatedConfirmation),
+        );
+
+        return updatedConfirmation;
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not refresh OPD token status.",
+      );
+    } finally {
+      setIsRefreshingStatus(false);
+    }
+  }, [confirmation?.booking_id]);
+
+  useEffect(() => {
+    if (!confirmation) {
+      return;
+    }
+
+    void refreshBookingStatus();
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshBookingStatus();
+      }
+    };
+
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    if (confirmation.booking_status !== "pending_approval") {
+      return () => {
+        window.removeEventListener("focus", refreshWhenVisible);
+        document.removeEventListener("visibilitychange", refreshWhenVisible);
+      };
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshBookingStatus();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [confirmation?.booking_id, confirmation?.booking_status, refreshBookingStatus]);
 
   const handleConfirm = async () => {
     if (!bookingDraft || confirmation || isConfirming) {
@@ -146,40 +229,45 @@ export function ConfirmationPage() {
     return (
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-          Booking confirmation
+          OPD token
         </p>
         <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-          No booking draft found.
+          No OPD token draft found.
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-          Choose a doctor and slot before confirming an appointment.
+          Complete department routing before generating a token.
         </p>
         <Link
           to="/booking"
           className="mt-6 inline-flex rounded-lg bg-brand-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900"
         >
-          Go to doctor selection
+          Go to OPD token
         </Link>
       </section>
     );
   }
 
   const displayData = confirmation ?? bookingDraft;
+  const tokenIsApproved =
+    confirmation?.booking_status === "confirmed" ||
+    confirmation?.consultation_status === "waiting" ||
+    confirmation?.consultation_status === "in_consultation" ||
+    confirmation?.consultation_status === "completed";
 
   return (
     <section className="space-y-6">
       <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-          Booking confirmation
+          OPD token
         </p>
         <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              {confirmation ? "Appointment confirmed." : "Review appointment."}
+              {confirmation ? "OPD token generated." : "Review OPD token."}
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-              Confirming creates the booking record and marks this slot as
-              booked.
+              Confirming creates the OPD record, reserves this time, and
+              generates a token for the reception counter.
             </p>
           </div>
           {confirmation ? (
@@ -195,15 +283,21 @@ export function ConfirmationPage() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        Token status stays connected to admin approval. Patients can wait on
+        this page or refresh later from the health record after reception
+        confirms the visit.
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-slate-950">
-            Appointment summary
+            OPD token summary
           </h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <div className="rounded-lg bg-slate-50 p-4">
               <p className="text-xs font-semibold uppercase text-slate-500">
-                patient_code
+                patient code
               </p>
               <p className="mt-1 text-lg font-semibold text-slate-950">
                 {displayData?.patient_code}
@@ -211,7 +305,7 @@ export function ConfirmationPage() {
             </div>
             <div className="rounded-lg bg-slate-50 p-4">
               <p className="text-xs font-semibold uppercase text-slate-500">
-                booking_code
+                token record
               </p>
               <p className="mt-1 text-lg font-semibold text-brand-900">
                 {confirmation?.booking_code ?? "Pending confirmation"}
@@ -230,7 +324,7 @@ export function ConfirmationPage() {
             </div>
             <div className="rounded-lg bg-slate-50 p-4">
               <p className="text-xs font-semibold uppercase text-slate-500">
-                specialty
+                department
               </p>
               <p className="mt-1 text-lg font-semibold text-brand-900">
                 {displayData?.recommended_specialty_name}
@@ -238,7 +332,7 @@ export function ConfirmationPage() {
             </div>
             <div className="rounded-lg bg-slate-50 p-4">
               <p className="text-xs font-semibold uppercase text-slate-500">
-                slot date
+                OPD date
               </p>
               <p className="mt-1 text-lg font-semibold text-slate-950">
                 {displayData?.slot_date}
@@ -246,7 +340,7 @@ export function ConfirmationPage() {
             </div>
             <div className="rounded-lg bg-slate-50 p-4">
               <p className="text-xs font-semibold uppercase text-slate-500">
-                slot time
+                OPD time
               </p>
               <p className="mt-1 text-lg font-semibold text-slate-950">
                 {displayData
@@ -259,20 +353,52 @@ export function ConfirmationPage() {
 
         <aside className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-slate-950">
-            Booking status
+            Token status
           </h2>
           {confirmation ? (
             <div className="mt-5 space-y-4">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
-                Booking saved successfully.
+              {tokenIsApproved ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+                  OPD token approved by admin. The patient can wait for the
+                  doctor's OPD queue.
+                </div>
+              ) : (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                  OPD token saved and waiting for admin approval.
+                </div>
+              )}
+              <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm font-semibold text-brand-900">
+                Please show token {confirmation.token_number} at the OPD
+                registration/payment counter before consultation.
               </div>
+              <button
+                type="button"
+                onClick={() => void refreshBookingStatus()}
+                disabled={isRefreshingStatus}
+                className="w-full rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                {isRefreshingStatus ? "Refreshing status..." : "Refresh token status"}
+              </button>
+              {errorMessage ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+                  {errorMessage}
+                </div>
+              ) : null}
               <div className="space-y-3 text-sm">
                 <div>
                   <p className="text-xs font-semibold uppercase text-slate-500">
-                    booking_id
+                    record id
                   </p>
                   <p className="mt-1 break-all text-slate-700">
                     {confirmation.booking_id}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase text-slate-500">
+                    booking_status
+                  </p>
+                  <p className="mt-1 font-semibold text-slate-800">
+                    {confirmation.booking_status}
                   </p>
                 </div>
                 <div>
@@ -285,16 +411,16 @@ export function ConfirmationPage() {
                 </div>
               </div>
               <Link
-                to="/doctor-dashboard"
+                to="/patient-dashboard"
                 className="inline-flex w-full justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
               >
-                Open doctor queue
+                Open health record
               </Link>
             </div>
           ) : (
             <div className="mt-5 space-y-4">
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                This appointment is not saved yet.
+                This OPD token is not saved yet.
               </div>
               {errorMessage ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
@@ -307,11 +433,11 @@ export function ConfirmationPage() {
                 disabled={isConfirming}
                 className="w-full rounded-lg bg-brand-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                {isConfirming ? "Confirming booking..." : "Confirm booking"}
+                {isConfirming ? "Generating token..." : "Generate OPD token"}
               </button>
               <p className="text-sm leading-6 text-slate-600">
-                Booking creation uses sequential writes: booking insert first,
-                then slot update.
+                Online payment is skipped in this prototype. The patient uses
+                this token at the OPD counter and pays there if required.
               </p>
             </div>
           )}

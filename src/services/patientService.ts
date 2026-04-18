@@ -1,10 +1,18 @@
 import { getSupabaseClient } from "../lib/supabase";
+import { normalizePhone } from "../lib/phone";
 import type { AIIntakeResult } from "../types/ai";
 import type {
   Patient,
   PatientRegistrationInput,
   SavedPatientIntake,
 } from "../types/patient";
+
+export type PatientProfileUpdateInput = {
+  full_name: string;
+  age: number;
+  gender: string | null;
+  phone: string | null;
+};
 
 function generatePatientCode() {
   const timestampPart = Date.now().toString().slice(-6);
@@ -21,6 +29,7 @@ export async function createPatient(
 ): Promise<Patient> {
   const supabase = getSupabaseClient();
   const patientCode = generatePatientCode();
+  const normalizedPhone = input.phone ? normalizePhone(input.phone) : "";
 
   const { data, error } = await supabase
     .from("patients")
@@ -29,7 +38,7 @@ export async function createPatient(
       full_name: input.full_name,
       age: input.age,
       gender: input.gender,
-      phone: input.phone,
+      phone: normalizedPhone || null,
       symptom_input: input.symptom_input,
       input_mode: input.input_mode,
     })
@@ -92,4 +101,30 @@ export async function savePatientIntake(
     urgency_level: aiResult.urgency_level,
     reasoning: aiResult.reasoning,
   };
+}
+
+export async function updatePatientProfile(
+  patientId: string,
+  input: PatientProfileUpdateInput,
+): Promise<Patient> {
+  const supabase = getSupabaseClient();
+  const normalizedPhone = input.phone ? normalizePhone(input.phone) : "";
+
+  const { data, error } = await supabase
+    .from("patients")
+    .update({
+      full_name: input.full_name,
+      age: input.age,
+      gender: input.gender,
+      phone: normalizedPhone || null,
+    })
+    .eq("id", patientId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(getSupabaseErrorMessage("Could not update patient profile", error));
+  }
+
+  return data;
 }

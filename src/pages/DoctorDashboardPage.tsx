@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { getStoredSession } from "../lib/session";
 import { getTodayDoctorQueue } from "../services/doctorService";
 import type { DoctorQueueItem } from "../types/doctor";
 
@@ -20,6 +21,10 @@ function formatTime(time: string) {
 }
 
 export function DoctorDashboardPage() {
+  const session = getStoredSession();
+  const doctorId = session?.role === "doctor" ? session.doctorId : undefined;
+  const doctorName =
+    session?.role === "doctor" ? session.displayName : "All doctors";
   const [queue, setQueue] = useState<DoctorQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -29,7 +34,7 @@ export function DoctorDashboardPage() {
     setIsLoading(true);
     setErrorMessage(null);
 
-    getTodayDoctorQueue()
+    getTodayDoctorQueue(doctorId)
       .then((items) => {
         if (isMounted) {
           setQueue(items);
@@ -53,7 +58,7 @@ export function DoctorDashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [doctorId]);
 
   return (
     <section className="space-y-6">
@@ -61,19 +66,24 @@ export function DoctorDashboardPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-              Doctor dashboard
+              Doctor OPD
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              Today's consultation queue
+              {session?.role === "doctor"
+                ? `${doctorName}'s OPD queue`
+                : "Today's OPD queue"}
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-              Open each booked patient from the queue and save the consultation
-              record digitally.
+              {session?.role === "doctor"
+                ? `Showing only OPD patients assigned to ${doctorName}${
+                    session.specialtyName ? ` (${session.specialtyName})` : ""
+                  }.`
+                : "Open each OPD token from the queue and save the consultation record digitally."}
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs font-semibold uppercase text-slate-500">
-              queue_count
+              waiting tokens
             </p>
             <p className="mt-1 text-3xl font-semibold text-slate-950">
               {queue.length}
@@ -82,9 +92,15 @@ export function DoctorDashboardPage() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        The doctor queue shows only admin-approved OPD tokens. Each consultation
+        opens the AI summary, patient record, previous visits, and prescription
+        form in one place.
+      </div>
+
       {isLoading ? (
         <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
-          Loading today's bookings...
+          Loading today's OPD queue...
         </div>
       ) : null}
 
@@ -96,7 +112,7 @@ export function DoctorDashboardPage() {
 
       {!isLoading && !errorMessage && queue.length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
-          No bookings are available for today's queue yet.
+          No OPD tokens are waiting in this queue yet.
         </div>
       ) : null}
 

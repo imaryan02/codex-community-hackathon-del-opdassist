@@ -6,13 +6,16 @@ import {
   LanguageSelector,
   StepProgress,
 } from "../components/kiosk";
+import { normalizePhone } from "../lib/phone";
 import { analyzeSymptoms } from "../services/aiService";
+import { getPatientAccountOverview } from "../services/patientHistoryService";
 import { savePatientIntake } from "../services/patientService";
 import type { SavedPatientIntake } from "../types/patient";
 
 type VoiceField = "fullName" | "age" | "gender" | "phone" | "symptomInput";
 type VoiceStage = VoiceField | "review";
 type Language = "en" | "hi";
+type VisitPatientMode = "self" | "other";
 
 type VoiceFormState = {
   fullName: string;
@@ -70,6 +73,7 @@ const orderedFields: VoiceField[] = [
   "phone",
   "symptomInput",
 ];
+const genderOptions = ["Male", "Female", "Transgender"];
 
 const LANGUAGE_STORAGE_KEY = "preferredKioskLanguage";
 
@@ -87,13 +91,41 @@ function getStoredLanguage(): Language {
   return storedLanguage === "hi" ? "hi" : "en";
 }
 
+function getStoredVisitPatientMode(): VisitPatientMode {
+  return localStorage.getItem("visitPatientMode") === "other" ? "other" : "self";
+}
+
+function getStoredPatientPhone(visitMode: VisitPatientMode = getStoredVisitPatientMode()) {
+  if (visitMode === "other") {
+    return "";
+  }
+
+  const storedValue = localStorage.getItem("patientAccountLookup")?.trim() ?? "";
+  const phone = normalizePhone(storedValue);
+
+  if (storedValue.toUpperCase().startsWith("PAT-") || phone.length < 10) {
+    return "";
+  }
+
+  return phone;
+}
+
+function getInitialFormState(
+  visitMode: VisitPatientMode = getStoredVisitPatientMode(),
+): VoiceFormState {
+  return {
+    ...initialFormState,
+    phone: getStoredPatientPhone(visitMode),
+  };
+}
+
 const voiceCopy = {
   en: {
     shell: {
-      eyebrow: "AI voice receptionist",
-      title: "AI receptionist is listening.",
+      eyebrow: "AI intake assistant",
+      title: "AI intake assistant is listening.",
       subtitle:
-        "The agent runs on the left with voice and chat. The patient form stays open on the right for edits.",
+        "Answer one question at a time. The patient form stays open on the right for review.",
       touchLink: "Use touch instead",
     },
     voiceSteps: ["Name", "Age", "Gender", "Phone", "Symptoms"],
@@ -109,8 +141,8 @@ const voiceCopy = {
         "Namaste. Welcome to hospital check-in. Please tell me the patient's full name.",
       age: "Thank you. Please tell me the patient's age in years.",
       gender:
-        "Please tell me the patient's gender. You can say female, male, non-binary, or prefer not to say.",
-      phone: "Please tell me the phone number for appointment updates.",
+        "Please select the patient's gender in the form: male, female, or transgender.",
+      phone: "Please tell me the phone number for OPD token updates.",
       symptomInput:
         "Please describe the main health concern. Include where it hurts, how long it has been happening, and anything that makes it better or worse.",
     },
@@ -216,8 +248,8 @@ const voiceCopy = {
         "नमस्ते। हॉस्पिटल चेक-इन में आपका स्वागत है। कृपया मरीज का पूरा नाम बताएं।",
       age: "धन्यवाद। कृपया मरीज की उम्र सालों में बताएं।",
       gender:
-        "कृपया मरीज का लिंग बताएं। आप महिला, पुरुष, नॉन-बाइनरी, या बताना नहीं चाहते कह सकते हैं।",
-      phone: "कृपया अपॉइंटमेंट अपडेट के लिए फोन नंबर बताएं।",
+        "कृपया मरीज का लिंग चुनें: पुरुष, महिला, या ट्रांसजेंडर।",
+      phone: "कृपया OPD टोकन अपडेट के लिए फोन नंबर बताएं।",
       symptomInput:
         "कृपया मुख्य स्वास्थ्य समस्या बताएं। कहां दर्द है, कितने समय से है, और किससे बेहतर या खराब होता है, यह भी बताएं।",
     },
@@ -527,13 +559,27 @@ function getFieldIndex(field: VoiceField) {
   return orderedFields.indexOf(field);
 }
 
-function getNextField(field: VoiceField): VoiceField | null {
+function getNextField(field: VoiceField, form?: VoiceFormState): VoiceField | null {
   const nextIndex = getFieldIndex(field) + 1;
-  return orderedFields[nextIndex] ?? null;
+  const nextFields = orderedFields.slice(nextIndex);
+
+  if (!form) {
+    return nextFields[0] ?? null;
+  }
+
+  return nextFields.find((nextField) => !form[nextField].trim()) ?? null;
 }
 
 function normalizeGender(transcript: string) {
   const text = transcript.toLowerCase();
+
+  if (
+    text.includes("trans") ||
+    text.includes("transgender") ||
+    text.includes("third gender")
+  ) {
+    return "Transgender";
+  }
 
   if (
     text.includes("prefer") ||
@@ -541,7 +587,7 @@ function normalizeGender(transcript: string) {
     text.includes("नहीं बताना") ||
     text.includes("बताना नहीं")
   ) {
-    return "Prefer not to say";
+    return "";
   }
 
   if (
@@ -550,7 +596,7 @@ function normalizeGender(transcript: string) {
     text.includes("नॉन") ||
     text.includes("बाइनरी")
   ) {
-    return "Non-binary";
+    return "Transgender";
   }
 
   if (
@@ -610,7 +656,7 @@ function validateForm(
 ) {
   const errors: VoiceFormErrors = {};
   const parsedAge = Number(normalizeIndicDigits(form.age));
-  const phoneDigits = normalizeIndicDigits(form.phone).replace(/\D/g, "");
+  const phoneDigits = normalizePhone(form.phone);
 
   if (!form.fullName.trim()) {
     errors.fullName = validation.fullNameRequired;
@@ -712,11 +758,11 @@ function inferFieldFromChat(message: string, fallback: VoiceField): VoiceField {
     text.includes("gender") ||
     text.includes("female") ||
     text.includes("male") ||
-    text.includes("non-binary") ||
+    text.includes("transgender") ||
     text.includes("लिंग") ||
     text.includes("महिला") ||
     text.includes("पुरुष") ||
-    text.includes("नॉन")
+    text.includes("ट्रांसजेंडर")
   ) {
     return "gender";
   }
@@ -794,15 +840,26 @@ function cleanChatValue(field: VoiceField, message: string) {
 export function VoiceRegisterPage() {
   const navigate = useNavigate();
   const [language, setLanguage] = useState<Language>(getStoredLanguage);
+  const [visitMode, setVisitMode] = useState<VisitPatientMode>(
+    getStoredVisitPatientMode,
+  );
   const copy = voiceCopy[language];
-  const [form, setForm] = useState<VoiceFormState>(initialFormState);
+  const initialVoiceForm = useMemo(
+    () => getInitialFormState(visitMode),
+    [visitMode],
+  );
+  const initialVoiceStage = useMemo(
+    () => getFirstIncompleteField(initialVoiceForm),
+    [initialVoiceForm],
+  );
+  const [form, setForm] = useState<VoiceFormState>(initialVoiceForm);
   const [errors, setErrors] = useState<VoiceFormErrors>({});
-  const [stage, setStage] = useState<VoiceStage>("fullName");
+  const [stage, setStage] = useState<VoiceStage>(initialVoiceStage);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
-      id: "agent-full-name-question",
+      id: `agent-${initialVoiceStage}-question`,
       sender: "agent",
-      text: voiceCopy[getStoredLanguage()].prompts.fullName,
+      text: voiceCopy[getStoredLanguage()].prompts[initialVoiceStage],
     },
   ]);
   const [chatDraft, setChatDraft] = useState("");
@@ -817,6 +874,7 @@ export function VoiceRegisterPage() {
   const lastSpokenTextRef = useRef("");
   const listenBlockedUntilRef = useRef(0);
   const hasMountedRef = useRef(false);
+  const hasPrefilledProfileRef = useRef(false);
 
   const speechSupported = useMemo(() => {
     if (typeof window === "undefined") {
@@ -833,6 +891,108 @@ export function VoiceRegisterPage() {
 
     return "speechSynthesis" in window;
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("visitPatientMode", visitMode);
+
+    if (visitMode === "other" || hasPrefilledProfileRef.current) {
+      return;
+    }
+
+    const lookup = localStorage.getItem("patientAccountLookup")?.trim();
+
+    if (!lookup || lookup === "walk-in") {
+      return;
+    }
+
+    hasPrefilledProfileRef.current = true;
+
+    getPatientAccountOverview(lookup)
+      .then((account) => {
+        const profile = account.latestProfile;
+
+        if (!profile) {
+          return;
+        }
+
+        const nextForm: VoiceFormState = {
+          fullName: profile.full_name,
+          age: String(profile.age),
+          gender: profile.gender ?? "",
+          phone: profile.phone ?? lookup,
+          symptomInput: "",
+        };
+        const nextStage = getFirstIncompleteField(nextForm);
+        const welcome =
+          nextStage === "symptomInput"
+            ? `Welcome back, ${profile.full_name}. I have your OPD profile. Please tell me today's health problem.`
+            : `Welcome back, ${profile.full_name}. I found your OPD profile. Please update the missing details.`;
+
+        setForm(nextForm);
+        setStage(nextStage);
+        setChatMessages([
+          {
+            id: "agent-returning-patient",
+            sender: "agent",
+            text: welcome,
+          },
+        ]);
+
+        if (nextStage === "symptomInput") {
+          window.setTimeout(() => {
+            void speak(welcome).then(() => startListening("symptomInput"));
+          }, 250);
+        }
+      })
+      .catch(() => {
+        hasPrefilledProfileRef.current = false;
+      });
+  }, [visitMode]);
+
+  const handleVisitModeChange = (mode: VisitPatientMode) => {
+    localStorage.setItem("visitPatientMode", mode);
+    recognitionRef.current?.stop();
+    if (speechOutputSupported) {
+      window.speechSynthesis.cancel();
+    }
+
+    hasPrefilledProfileRef.current = false;
+    setVisitMode(mode);
+    const nextForm = getInitialFormState(mode);
+    const nextStage = getFirstIncompleteField(nextForm);
+    setForm(nextForm);
+    setStage(nextStage);
+    setErrors({});
+    setVoiceError(null);
+    setSavedIntake(null);
+    setIsListening(false);
+    setIsSpeaking(false);
+    setChatMessages([
+      {
+        id: `agent-${mode}-${nextStage}-question`,
+        sender: "agent",
+        text: copy.prompts[nextStage],
+      },
+    ]);
+  };
+
+  useEffect(() => {
+    const syncVisitMode = () => {
+      const nextMode = getStoredVisitPatientMode();
+
+      if (nextMode !== visitMode) {
+        handleVisitModeChange(nextMode);
+      }
+    };
+
+    window.addEventListener("visit-patient-mode-changed", syncVisitMode);
+    window.addEventListener("storage", syncVisitMode);
+
+    return () => {
+      window.removeEventListener("visit-patient-mode-changed", syncVisitMode);
+      window.removeEventListener("storage", syncVisitMode);
+    };
+  }, [visitMode]);
 
   useEffect(() => {
     return () => {
@@ -930,7 +1090,11 @@ export function VoiceRegisterPage() {
 
   const handleCapturedText = (field: VoiceField, transcript: string) => {
     const normalizedValue = normalizeTranscript(field, transcript);
-    const nextField = getNextField(field);
+    const nextForm = {
+      ...form,
+      [field]: normalizedValue,
+    };
+    const nextField = getNextField(field, nextForm);
 
     appendChatMessage("patient", transcript);
     updateField(field, normalizedValue);
@@ -1054,7 +1218,7 @@ export function VoiceRegisterPage() {
       return;
     }
 
-    const nextField = getNextField(stage);
+    const nextField = getNextField(stage, form);
     if (!nextField) {
       setStage("review");
       void speak(copy.messages.reviewBeforeContinuing);
@@ -1080,7 +1244,11 @@ export function VoiceRegisterPage() {
     setChatDraft("");
 
     if (targetField === stage) {
-      const nextField = getNextField(targetField);
+      const nextForm = {
+        ...form,
+        [targetField]: normalizedValue,
+      };
+      const nextField = getNextField(targetField, nextForm);
 
       if (nextField) {
         setStage(nextField);
@@ -1129,7 +1297,7 @@ export function VoiceRegisterPage() {
           full_name: form.fullName.trim(),
           age: Number(normalizeIndicDigits(form.age)),
           gender: form.gender.trim() || null,
-          phone: normalizeIndicDigits(form.phone).trim() || null,
+          phone: normalizePhone(form.phone) || null,
           symptom_input: form.symptomInput.trim(),
           input_mode: "voice",
         },
@@ -1187,12 +1355,50 @@ export function VoiceRegisterPage() {
         </div>
       }
     >
+      <section className="mb-6 rounded-lg border border-cyan-100 bg-white p-5 shadow-sm">
+        <p className="text-sm font-bold text-slate-900">
+          Who is this new OPD visit for?
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {[
+            { label: "Myself", value: "self" },
+            { label: "Someone else", value: "other" },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() =>
+                handleVisitModeChange(option.value as VisitPatientMode)
+              }
+              className={[
+                "rounded-lg border px-4 py-3 text-sm font-bold transition",
+                visitMode === option.value
+                  ? "border-brand-700 bg-brand-700 text-white"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-cyan-50",
+              ].join(" ")}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Choose Myself to reuse the logged-in patient's saved details. Choose
+          Someone else to start a fresh patient intake.
+        </p>
+      </section>
+
       <div className="mb-6">
         <StepProgress
           steps={copy.voiceSteps}
           currentStep={currentStep}
           stepLabel={copy.ui.stepLabel}
         />
+      </div>
+
+      <div className="mb-6 rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        Voice intake is built for crowded OPD desks: one question at a time,
+        form visible beside the assistant, and manual edits available before
+        saving.
       </div>
 
       <div className="voice-kiosk-layout">
@@ -1264,7 +1470,20 @@ export function VoiceRegisterPage() {
                     </span>
                   </div>
 
-                  {isSymptomField ? (
+                  {field === "gender" ? (
+                    <select
+                      value={form[field]}
+                      onChange={(event) => updateField(field, event.target.value)}
+                      className="mt-3 min-h-14 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-950 outline-none transition focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
+                    >
+                      <option value="">Select gender</option>
+                      {genderOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : isSymptomField ? (
                     <textarea
                       value={form[field]}
                       onChange={(event) => updateField(field, event.target.value)}

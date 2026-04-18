@@ -192,16 +192,24 @@ export async function getAllDoctors(): Promise<DoctorWithSpecialty[]> {
   return ((data ?? []) as unknown as DoctorRow[]).map(mapDoctorRow);
 }
 
-export async function getTodayDoctorQueue(): Promise<DoctorQueueItem[]> {
+export async function getTodayDoctorQueue(
+  doctorId?: string,
+): Promise<DoctorQueueItem[]> {
   const supabase = getSupabaseClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("bookings")
     .select(
       "id,booking_code,token_number,consultation_status,booking_status,created_at,patients!inner(id,full_name,patient_code,age,gender,phone,symptom_input),ai_intake_reports(id,symptom_summary,urgency_level,reasoning,recommended_specialty_id,specialties(name)),doctors!inner(id,full_name,qualification,specialties(name)),doctor_slots!inner(id,slot_date,start_time,end_time)",
     )
     .eq("doctor_slots.slot_date", getTodayDateString())
-    .neq("booking_status", "cancelled")
+    .in("booking_status", ["confirmed", "completed"]);
+
+  if (doctorId) {
+    query = query.eq("doctor_id", doctorId);
+  }
+
+  const { data, error } = await query
     .order("token_number", { ascending: true, nullsFirst: false });
 
   if (error) {

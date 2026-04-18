@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getConsultationDetail } from "../services/doctorService";
+import { getPatientHistory } from "../services/patientHistoryService";
 import { savePrescription } from "../services/prescriptionService";
 import type { ConsultationDetail } from "../types/doctor";
+import type { PatientHistoryItem } from "../types/history";
 
 type ConsultationFormState = {
   diagnosis: string;
@@ -28,13 +30,26 @@ function formatTime(time: string) {
   return time ? time.slice(0, 5) : "--:--";
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return "Not available";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 export function ConsultationPage() {
   const { bookingId } = useParams();
   const [detail, setDetail] = useState<ConsultationDetail | null>(null);
+  const [history, setHistory] = useState<PatientHistoryItem[]>([]);
   const [form, setForm] = useState<ConsultationFormState>(initialFormState);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,9 +64,26 @@ export function ConsultationPage() {
     setErrorMessage(null);
 
     getConsultationDetail(bookingId)
-      .then((result) => {
+      .then(async (result) => {
         if (isMounted) {
           setDetail(result);
+        }
+
+        try {
+          const patientHistory = await getPatientHistory(result.patient_id);
+
+          if (isMounted) {
+            setHistory(patientHistory);
+            setHistoryError(null);
+          }
+        } catch (historyFetchError) {
+          if (isMounted) {
+            setHistoryError(
+              historyFetchError instanceof Error
+                ? historyFetchError.message
+                : "Could not load patient history.",
+            );
+          }
         }
       })
       .catch((error) => {
@@ -153,7 +185,7 @@ export function ConsultationPage() {
     return (
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-          Consultation
+          OPD consultation
         </p>
         <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
           Consultation record unavailable.
@@ -214,6 +246,12 @@ export function ConsultationPage() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        This consultation view brings the OPD token, AI triage, patient profile,
+        past visits, diagnosis, prescription, notes, and follow-up advice into a
+        single doctor workflow.
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
         <section className="space-y-6">
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -249,8 +287,103 @@ export function ConsultationPage() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-950">
+                  Patient history
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Records are linked by the patient's saved phone number or
+                  patient account code.
+                </p>
+              </div>
+              <span className="rounded-lg bg-cyan-50 px-3 py-2 text-xs font-bold text-brand-900">
+                {history.length} records
+              </span>
+            </div>
+
+            {historyError ? (
+              <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                {historyError}
+              </div>
+            ) : null}
+
+            {!historyError && history.length === 0 ? (
+              <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                No previous records found for this patient account.
+              </div>
+            ) : null}
+
+            <div className="mt-5 space-y-4">
+              {history.map((item) => (
+                <article
+                  key={`${item.patient_id}-${item.booking_code ?? item.visit_date}`}
+                  className={[
+                    "rounded-lg border p-4",
+                    item.patient_id === detail.patient_id
+                      ? "border-cyan-200 bg-cyan-50"
+                      : "border-slate-200 bg-slate-50",
+                  ].join(" ")}
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-slate-950">
+                        {item.patient_name} - {formatDateTime(item.visit_date)}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {item.patient_code}
+                        {item.booking_code ? ` - ${item.booking_code}` : ""}
+                        {item.token_number ? ` - Token ${item.token_number}` : ""}
+                      </p>
+                    </div>
+                    <span className="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-brand-900">
+                      {item.consultation_status ?? "intake saved"}
+                    </span>
+                  </div>
+
+                  <p className="mt-3 text-sm leading-6 text-slate-700">
+                    {item.symptom_summary ?? item.symptom_input}
+                  </p>
+
+                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">
+                        Specialty / doctor
+                      </p>
+                      <p className="mt-1 text-slate-800">
+                        {item.specialty_name ?? "Not routed"} -{" "}
+                        {item.doctor_name ?? "No doctor booked"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">
+                        Prescription
+                      </p>
+                      <p className="mt-1 text-slate-800">
+                        {item.diagnosis || item.prescription_text
+                          ? `${item.diagnosis ?? "Consultation"}${
+                              item.prescription_text
+                                ? ` - ${item.prescription_text}`
+                                : ""
+                            }`
+                          : "No prescription saved yet"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {item.follow_up_advice || item.notes ? (
+                    <p className="mt-3 rounded-lg bg-white p-3 text-sm leading-6 text-slate-700">
+                      {item.follow_up_advice ?? item.notes}
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-xl font-semibold text-slate-950">
-              Intake summary
+              Current OPD intake
             </h2>
             <div className="mt-5 space-y-4">
               <div className="rounded-lg bg-slate-50 p-4">
@@ -284,7 +417,7 @@ export function ConsultationPage() {
               </div>
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase text-slate-500">
-                  Doctor and slot
+                  Doctor and OPD time
                 </p>
                 <p className="mt-2 text-sm font-semibold text-slate-900">
                   {detail.doctor_name}
@@ -306,11 +439,11 @@ export function ConsultationPage() {
           className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
         >
           <h2 className="text-xl font-semibold text-slate-950">
-            Save consultation
+            Save OPD consultation
           </h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             Add the doctor's diagnosis, prescription, notes, and follow-up
-            advice. Saving will complete the booking.
+            advice. Saving will complete this OPD token.
           </p>
 
           <div className="mt-5 space-y-5">

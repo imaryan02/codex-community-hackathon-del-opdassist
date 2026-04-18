@@ -1,12 +1,15 @@
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { KioskShell, KioskStatePanel, StepProgress } from "../components/kiosk";
+import { normalizePhone } from "../lib/phone";
 import { analyzeSymptoms } from "../services/aiService";
+import { getPatientAccountOverview } from "../services/patientHistoryService";
 import { savePatientIntake } from "../services/patientService";
 import type { AIIntakeResult } from "../types/ai";
 import type { SavedPatientIntake } from "../types/patient";
 
 type InputMode = "text" | "voice";
+type VisitPatientMode = "self" | "other";
 
 type IntakeFormState = {
   fullName: string;
@@ -61,7 +64,7 @@ const initialFormState: IntakeFormState = {
   inputMode: "text",
 };
 
-const genderOptions = ["Female", "Male", "Non-binary", "Prefer not to say"];
+const genderOptions = ["Male", "Female", "Transgender"];
 const intakeSteps = ["Name", "Age", "Gender", "Phone", "Symptoms"];
 
 const symptomPrompts = [
@@ -84,7 +87,7 @@ function validateForm(form: IntakeFormState) {
   const trimmedName = form.fullName.trim();
   const trimmedSymptoms = form.symptomInput.trim();
   const parsedAge = Number(form.age);
-  const phoneDigits = form.phone.replace(/\D/g, "");
+  const phoneDigits = normalizePhone(form.phone);
 
   if (!trimmedName) {
     errors.fullName = "Enter the patient's full name.";
@@ -103,7 +106,7 @@ function validateForm(form: IntakeFormState) {
   }
 
   if (!form.phone.trim()) {
-    errors.phone = "Enter a phone number for appointment updates.";
+    errors.phone = "Enter a phone number for OPD token updates.";
   } else if (phoneDigits.length < 10 || phoneDigits.length > 15) {
     errors.phone = "Enter a valid phone number with 10 to 15 digits.";
   }
@@ -149,6 +152,34 @@ function getStoredPreferredDoctorContext() {
   }
 }
 
+function getStoredVisitPatientMode(): VisitPatientMode {
+  return localStorage.getItem("visitPatientMode") === "other" ? "other" : "self";
+}
+
+function getStoredPatientPhone(visitMode: VisitPatientMode = getStoredVisitPatientMode()) {
+  if (visitMode === "other") {
+    return "";
+  }
+
+  const storedValue = localStorage.getItem("patientAccountLookup")?.trim() ?? "";
+  const phone = normalizePhone(storedValue);
+
+  if (storedValue.toUpperCase().startsWith("PAT-") || phone.length < 10) {
+    return "";
+  }
+
+  return phone;
+}
+
+function getInitialFormState(
+  visitMode: VisitPatientMode = getStoredVisitPatientMode(),
+): IntakeFormState {
+  return {
+    ...initialFormState,
+    phone: getStoredPatientPhone(visitMode),
+  };
+}
+
 function getCurrentStep(form: IntakeFormState) {
   if (!form.fullName.trim()) {
     return 1;
@@ -169,7 +200,12 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const locationState = location.state as RegisterLocationState | null;
-  const [form, setForm] = useState<IntakeFormState>(initialFormState);
+  const [visitMode, setVisitMode] = useState<VisitPatientMode>(
+    getStoredVisitPatientMode,
+  );
+  const [form, setForm] = useState<IntakeFormState>(() =>
+    getInitialFormState(visitMode),
+  );
   const [errors, setErrors] = useState<IntakeFormErrors>({});
   const [isListening, setIsListening] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -182,6 +218,7 @@ export function RegisterPage() {
     null,
   );
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const hasPrefilledProfileRef = useRef(false);
 
   const preferredDoctorContext = useMemo(() => {
     if (isPreferredDoctorContext(locationState?.preferredDoctorContext)) {
@@ -200,6 +237,72 @@ export function RegisterPage() {
 
     return Boolean(getSpeechRecognition());
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("visitPatientMode", visitMode);
+
+    if (visitMode === "other" || hasPrefilledProfileRef.current) {
+      return;
+    }
+
+    const lookup = localStorage.getItem("patientAccountLookup")?.trim();
+
+    if (!lookup || lookup === "walk-in") {
+      return;
+    }
+
+    hasPrefilledProfileRef.current = true;
+
+    getPatientAccountOverview(lookup)
+      .then((account) => {
+        if (!account.latestProfile) {
+          return;
+        }
+
+        setForm((current) => ({
+          ...current,
+          fullName: current.fullName || account.latestProfile?.full_name || "",
+          age: current.age || String(account.latestProfile?.age ?? ""),
+          gender: current.gender || account.latestProfile?.gender || "",
+          phone: current.phone || account.latestProfile?.phone || lookup,
+        }));
+      })
+      .catch(() => {
+        hasPrefilledProfileRef.current = false;
+      });
+  }, [visitMode]);
+
+  const handleVisitModeChange = (mode: VisitPatientMode) => {
+    setVisitMode(mode);
+    localStorage.setItem("visitPatientMode", mode);
+    hasPrefilledProfileRef.current = false;
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    setErrors({});
+    setVoiceMessage(null);
+    setAnalysisError(null);
+    setAnalysisResult(null);
+    setSavedIntake(null);
+    setForm(getInitialFormState(mode));
+  };
+
+  useEffect(() => {
+    const syncVisitMode = () => {
+      const nextMode = getStoredVisitPatientMode();
+
+      if (nextMode !== visitMode) {
+        handleVisitModeChange(nextMode);
+      }
+    };
+
+    window.addEventListener("visit-patient-mode-changed", syncVisitMode);
+    window.addEventListener("storage", syncVisitMode);
+
+    return () => {
+      window.removeEventListener("visit-patient-mode-changed", syncVisitMode);
+      window.removeEventListener("storage", syncVisitMode);
+    };
+  }, [visitMode]);
 
   const updateField = (field: keyof IntakeFormState, value: string) => {
     setForm((current) => ({
@@ -310,7 +413,7 @@ export function RegisterPage() {
           full_name: form.fullName.trim(),
           age: Number(form.age),
           gender: form.gender || null,
-          phone: form.phone.trim() || null,
+          phone: normalizePhone(form.phone) || null,
           symptom_input: form.symptomInput.trim(),
           input_mode: form.inputMode,
         },
@@ -350,8 +453,46 @@ export function RegisterPage() {
         </Link>
       }
     >
+      <section className="mb-6 rounded-lg border border-cyan-100 bg-white p-5 shadow-sm">
+        <p className="text-sm font-bold text-slate-900">
+          Who is this new OPD visit for?
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {[
+            { label: "Myself", value: "self" },
+            { label: "Someone else", value: "other" },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() =>
+                handleVisitModeChange(option.value as VisitPatientMode)
+              }
+              className={[
+                "rounded-lg border px-4 py-3 text-sm font-bold transition",
+                visitMode === option.value
+                  ? "border-brand-700 bg-brand-700 text-white"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-cyan-50",
+              ].join(" ")}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Choose Myself to reuse the logged-in patient's saved details. Choose
+          Someone else to start a fresh patient intake.
+        </p>
+      </section>
+
       <div className="mb-6">
         <StepProgress steps={intakeSteps} currentStep={currentStep} />
+      </div>
+
+      <div className="mb-6 rounded-lg border border-cyan-100 bg-cyan-50 p-5 text-sm leading-6 text-brand-900">
+        Intake creates a structured OPD visit record. The AI uses age, gender,
+        and symptoms to suggest the department; the patient can still edit every
+        field before saving.
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
@@ -378,7 +519,7 @@ export function RegisterPage() {
 
           {preferredDoctorContext ? (
             <KioskStatePanel title="Doctor request started">
-              Booking request started for {preferredDoctorContext.doctor_name}.
+              OPD token request started for {preferredDoctorContext.doctor_name}.
               Complete intake first so AI can confirm the safest specialty.
             </KioskStatePanel>
           ) : null}
@@ -430,33 +571,26 @@ export function RegisterPage() {
             </label>
           </div>
 
-          <fieldset className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <legend className="px-1 text-base font-bold text-slate-900">
-              Gender
-            </legend>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="mt-5 block rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <span className="text-base font-bold text-slate-900">Gender</span>
+            <select
+              value={form.gender}
+              onChange={(event) => updateField("gender", event.target.value)}
+              className="mt-3 min-h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-lg font-semibold text-slate-950 outline-none transition focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
+            >
+              <option value="">Select gender</option>
               {genderOptions.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => updateField("gender", option)}
-                  className={[
-                    "min-h-16 rounded-2xl border px-4 text-left text-base font-bold transition",
-                    form.gender === option
-                      ? "border-brand-600 bg-brand-700 text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-brand-600 hover:bg-cyan-50",
-                  ].join(" ")}
-                >
+                <option key={option} value={option}>
                   {option}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
             {errors.gender ? (
               <p className="mt-2 text-sm font-semibold text-red-600">
                 {errors.gender}
               </p>
             ) : null}
-          </fieldset>
+          </label>
 
           <label className="mt-5 block rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <span className="text-base font-bold text-slate-900">

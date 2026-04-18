@@ -55,8 +55,8 @@ export async function createBooking(
       doctor_id: draft.doctor_id,
       slot_id: draft.slot_id,
       ai_report_id: draft.ai_report_id,
-      booking_status: "confirmed",
-      consultation_status: "waiting",
+      booking_status: "pending_approval",
+      consultation_status: "pending_approval",
       token_number: tokenNumber,
     })
     .select("*")
@@ -82,5 +82,29 @@ export async function createBooking(
     token_number: booking.token_number ?? tokenNumber,
     booking_status: booking.booking_status,
     consultation_status: booking.consultation_status,
+  };
+}
+
+export async function getBookingStatus(bookingId: string): Promise<{
+  booking_status: Booking["booking_status"];
+  consultation_status: Booking["consultation_status"];
+  token_number: number;
+}> {
+  const supabase = getSupabaseClient();
+
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("booking_status,consultation_status,token_number")
+    .eq("id", bookingId)
+    .single();
+
+  if (error) {
+    throw new Error(`Could not refresh OPD token status: ${error.message}`);
+  }
+
+  return {
+    booking_status: data.booking_status,
+    consultation_status: data.consultation_status,
+    token_number: data.token_number ?? 0,
   };
 }
