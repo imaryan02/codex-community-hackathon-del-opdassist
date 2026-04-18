@@ -28,6 +28,33 @@ function formatDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function getPatientVisitStatusLabel(
+  bookingStatus: string | null,
+  consultationStatus: string | null,
+) {
+  if (bookingStatus === "confirmed" && consultationStatus === "waiting") {
+    return "Approved - waiting for doctor";
+  }
+
+  if (bookingStatus === "confirmed") {
+    return "Approved";
+  }
+
+  if (bookingStatus === "pending_approval") {
+    return "Waiting for admin approval";
+  }
+
+  if (bookingStatus === "cancelled" || consultationStatus === "cancelled") {
+    return "Cancelled";
+  }
+
+  if (bookingStatus === "completed" || consultationStatus === "completed") {
+    return "Completed";
+  }
+
+  return consultationStatus ?? "Intake saved";
+}
+
 export function PatientDashboardPage() {
   const session = getStoredSession();
   const lookup =
@@ -568,7 +595,10 @@ export function PatientDashboardPage() {
                       </p>
                     </div>
                     <span className="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-brand-900">
-                      {visit.consultation_status ?? "intake saved"}
+                      {getPatientVisitStatusLabel(
+                        visit.booking_status,
+                        visit.consultation_status,
+                      )}
                     </span>
                   </div>
 
