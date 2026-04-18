@@ -28,6 +28,13 @@ create table if not exists doctor_slots (
   created_at timestamp with time zone default now()
 );
 
+create table if not exists patient_accounts (
+  id uuid primary key default gen_random_uuid(),
+  mobile text unique not null,
+  display_name text,
+  created_at timestamp with time zone default now()
+);
+
 create table if not exists patients (
   id uuid primary key default gen_random_uuid(),
   patient_code text unique not null,
@@ -37,7 +44,10 @@ create table if not exists patients (
   phone text,
   symptom_input text not null,
   input_mode text not null,
-  created_at timestamp with time zone default now()
+  created_at timestamp with time zone default now(),
+  account_id uuid references patient_accounts(id),
+  booked_for text default 'self',
+  booked_by_mobile text
 );
 
 create table if not exists ai_intake_reports (
@@ -61,7 +71,11 @@ create table if not exists bookings (
   booking_status text default 'confirmed',
   consultation_status text default 'waiting',
   token_number integer,
-  created_at timestamp with time zone default now()
+  created_at timestamp with time zone default now(),
+  approved_at timestamp with time zone,
+  approved_by text,
+  cancelled_at timestamp with time zone,
+  cancelled_by text
 );
 
 create table if not exists prescriptions (

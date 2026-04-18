@@ -83,6 +83,10 @@ type BookingStatusRow = {
   id: string;
   booking_status: string;
   consultation_status: string;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
 };
 
 function one<T>(value: RelationOne<T>): T | null {
@@ -137,6 +141,42 @@ function mapBookingRow(row: BookingRow): AdminBookingRow {
     doctor_name: doctor?.full_name ?? "Unknown doctor",
     slot_time: formatTimeRange(slot?.start_time, slot?.end_time),
   };
+}
+
+function syncCachedBookingStatus(updated: BookingStatusRow) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const storedValue = localStorage.getItem("latestBookingConfirmation");
+
+  if (!storedValue) {
+    return;
+  }
+
+  try {
+    const cached = JSON.parse(storedValue) as {
+      booking_id?: string;
+      booking_status?: string;
+      consultation_status?: string;
+    };
+
+    if (cached.booking_id !== updated.id) {
+      return;
+    }
+
+    localStorage.setItem(
+      "latestBookingConfirmation",
+      JSON.stringify({
+        ...cached,
+        booking_status: updated.booking_status,
+        consultation_status: updated.consultation_status,
+      }),
+    );
+    window.dispatchEvent(new Event("booking-status-changed"));
+  } catch {
+    localStorage.removeItem("latestBookingConfirmation");
+  }
 }
 
 export async function getAdminDashboardSummary(): Promise<AdminDashboardSummary> {
@@ -220,15 +260,22 @@ export async function getPendingTokenApprovals(): Promise<AdminBookingRow[]> {
 
 export async function approveOpdToken(bookingId: string) {
   const supabase = getSupabaseClient();
+  const approvedAt = new Date().toISOString();
 
   const { data, error } = await supabase
     .from("bookings")
     .update({
       booking_status: "confirmed",
       consultation_status: "waiting",
+      approved_at: approvedAt,
+      approved_by: "Hospital Admin",
+      cancelled_at: null,
+      cancelled_by: null,
     })
     .eq("id", bookingId)
-    .select("id,booking_status,consultation_status")
+    .select(
+      "id,booking_status,consultation_status,approved_at,approved_by,cancelled_at,cancelled_by",
+    )
     .single();
 
   if (error) {
@@ -244,20 +291,26 @@ export async function approveOpdToken(bookingId: string) {
     throw new Error("OPD token approval did not update the booking status.");
   }
 
+  syncCachedBookingStatus(updated);
   return updated;
 }
 
 export async function cancelOpdToken(bookingId: string) {
   const supabase = getSupabaseClient();
+  const cancelledAt = new Date().toISOString();
 
   const { data, error } = await supabase
     .from("bookings")
     .update({
       booking_status: "cancelled",
       consultation_status: "cancelled",
+      cancelled_at: cancelledAt,
+      cancelled_by: "Hospital Admin",
     })
     .eq("id", bookingId)
-    .select("id,booking_status,consultation_status")
+    .select(
+      "id,booking_status,consultation_status,approved_at,approved_by,cancelled_at,cancelled_by",
+    )
     .single();
 
   if (error) {
@@ -273,6 +326,7 @@ export async function cancelOpdToken(bookingId: string) {
     throw new Error("OPD token cancellation did not update the booking status.");
   }
 
+  syncCachedBookingStatus(updated);
   return updated;
 }
 

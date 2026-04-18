@@ -202,6 +202,34 @@ export function ConfirmationPage() {
     };
   }, [confirmation?.booking_id, confirmation?.booking_status, refreshBookingStatus]);
 
+  useEffect(() => {
+    if (!confirmation) {
+      return;
+    }
+
+    const syncStoredStatus = () => {
+      const storedConfirmation = getStoredBookingConfirmation(bookingDraft);
+
+      if (
+        storedConfirmation &&
+        storedConfirmation.booking_id === confirmation.booking_id
+      ) {
+        setConfirmation(storedConfirmation);
+        return;
+      }
+
+      void refreshBookingStatus();
+    };
+
+    window.addEventListener("booking-status-changed", syncStoredStatus);
+    window.addEventListener("storage", syncStoredStatus);
+
+    return () => {
+      window.removeEventListener("booking-status-changed", syncStoredStatus);
+      window.removeEventListener("storage", syncStoredStatus);
+    };
+  }, [bookingDraft, confirmation?.booking_id, refreshBookingStatus]);
+
   const handleConfirm = async () => {
     if (!bookingDraft || confirmation || isConfirming) {
       return;

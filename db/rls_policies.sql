@@ -12,6 +12,7 @@ grant usage on schema public to anon;
 alter table specialties enable row level security;
 alter table doctors enable row level security;
 alter table doctor_slots enable row level security;
+alter table patient_accounts enable row level security;
 alter table patients enable row level security;
 alter table ai_intake_reports enable row level security;
 alter table bookings enable row level security;
@@ -20,6 +21,7 @@ alter table prescriptions enable row level security;
 grant select on specialties to anon;
 grant select, insert, update, delete on doctors to anon;
 grant select, insert, update, delete on doctor_slots to anon;
+grant select, insert, update on patient_accounts to anon;
 grant select, insert, update on patients to anon;
 grant select, insert on ai_intake_reports to anon;
 grant select, insert, update on bookings to anon;
@@ -91,6 +93,28 @@ to anon
 using (true);
 
 drop policy if exists "mvp_read_patients" on patients;
+drop policy if exists "mvp_read_patient_accounts" on patient_accounts;
+create policy "mvp_read_patient_accounts"
+on patient_accounts
+for select
+to anon
+using (true);
+
+drop policy if exists "mvp_insert_patient_accounts" on patient_accounts;
+create policy "mvp_insert_patient_accounts"
+on patient_accounts
+for insert
+to anon
+with check (true);
+
+drop policy if exists "mvp_update_patient_accounts" on patient_accounts;
+create policy "mvp_update_patient_accounts"
+on patient_accounts
+for update
+to anon
+using (true)
+with check (true);
+
 create policy "mvp_read_patients"
 on patients
 for select
