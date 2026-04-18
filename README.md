@@ -1,5 +1,7 @@
 # OPD Assist - AI Powered Hospital Kiosk System
 
+Demo video: https://drive.google.com/drive/folders/1eAIjvRHehIfvx2AgY2UQW9hq5oXrDn8j?usp=sharing
+
 OPD Assist is a simple kiosk-style system built for government hospital OPD workflows. It helps patients check in using a mobile number, complete a guided AI intake, find available doctors, request an OPD token, and continue their medical record across repeat visits.
 
 The project is hosted on Vercel and built as a working prototype for jury evaluation.
@@ -144,4 +146,3 @@ These policies are for hackathon/demo use only. A production healthcare system s
 ## Prototype Note
 
 This is a working prototype focused on the complete OPD journey. Authentication is simplified for demo purposes. In production, patient login would use verified mobile OTP, staff would use secure hospital accounts, and medical record access would be strictly controlled.
-

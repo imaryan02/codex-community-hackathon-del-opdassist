@@ -17,6 +17,7 @@ alter table patients enable row level security;
 alter table ai_intake_reports enable row level security;
 alter table bookings enable row level security;
 alter table prescriptions enable row level security;
+alter table patient_documents enable row level security;
 
 grant select on specialties to anon;
 grant select, insert, update, delete on doctors to anon;
@@ -26,6 +27,7 @@ grant select, insert, update on patients to anon;
 grant select, insert on ai_intake_reports to anon;
 grant select, insert, update on bookings to anon;
 grant select, insert on prescriptions to anon;
+grant select, insert, update, delete on patient_documents to anon;
 
 drop policy if exists "mvp_read_specialties" on specialties;
 create policy "mvp_read_specialties"
@@ -185,3 +187,65 @@ on prescriptions
 for insert
 to anon
 with check (true);
+
+drop policy if exists "mvp_read_patient_documents" on patient_documents;
+create policy "mvp_read_patient_documents"
+on patient_documents
+for select
+to anon
+using (true);
+
+drop policy if exists "mvp_insert_patient_documents" on patient_documents;
+create policy "mvp_insert_patient_documents"
+on patient_documents
+for insert
+to anon
+with check (true);
+
+drop policy if exists "mvp_update_patient_documents" on patient_documents;
+create policy "mvp_update_patient_documents"
+on patient_documents
+for update
+to anon
+using (true)
+with check (true);
+
+drop policy if exists "mvp_delete_patient_documents" on patient_documents;
+create policy "mvp_delete_patient_documents"
+on patient_documents
+for delete
+to anon
+using (true);
+
+insert into storage.buckets (id, name, public)
+values ('patient-documents', 'patient-documents', false)
+on conflict (id) do nothing;
+
+drop policy if exists "mvp_read_patient_document_files" on storage.objects;
+create policy "mvp_read_patient_document_files"
+on storage.objects
+for select
+to anon
+using (bucket_id = 'patient-documents');
+
+drop policy if exists "mvp_insert_patient_document_files" on storage.objects;
+create policy "mvp_insert_patient_document_files"
+on storage.objects
+for insert
+to anon
+with check (bucket_id = 'patient-documents');
+
+drop policy if exists "mvp_update_patient_document_files" on storage.objects;
+create policy "mvp_update_patient_document_files"
+on storage.objects
+for update
+to anon
+using (bucket_id = 'patient-documents')
+with check (bucket_id = 'patient-documents');
+
+drop policy if exists "mvp_delete_patient_document_files" on storage.objects;
+create policy "mvp_delete_patient_document_files"
+on storage.objects
+for delete
+to anon
+using (bucket_id = 'patient-documents');

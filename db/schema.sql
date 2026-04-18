@@ -89,3 +89,15 @@ create table if not exists prescriptions (
   follow_up_advice text,
   created_at timestamp with time zone default now()
 );
+
+create table if not exists patient_documents (
+  id uuid primary key default gen_random_uuid(),
+  patient_id uuid references patients(id) on delete cascade,
+  account_mobile text,
+  file_name text not null,
+  file_path text not null,
+  file_type text,
+  document_type text default 'Other',
+  title text not null,
+  uploaded_at timestamp with time zone default now()
+);

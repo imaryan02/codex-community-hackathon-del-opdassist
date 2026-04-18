@@ -1,10 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  KioskActionCard,
-  KioskShell,
-  LanguageSelector,
-} from "../components/kiosk";
+import { KioskActionCard, KioskShell } from "../components/kiosk";
 import {
   getStoredSession,
   loginPatient,
@@ -15,105 +11,47 @@ import { getAllDoctors } from "../services/doctorService";
 import { getPatientAccountOverview } from "../services/patientHistoryService";
 import type { DoctorWithSpecialty } from "../types/doctor";
 
-type Language = "en" | "hi";
-
-const LANGUAGE_STORAGE_KEY = "preferredKioskLanguage";
-
-function getStoredLanguage(): Language {
-  if (typeof window === "undefined") {
-    return "en";
-  }
-
-  const storedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return storedLanguage === "hi" ? "hi" : "en";
-}
-
 const landingCopy = {
-  en: {
-    eyebrow: "OPD self check-in",
-    title: "OPD Registration & Triage",
-    subtitle:
-      "Enter a mobile number, describe the health concern, get routed to the right department, and collect a token for the counter.",
-    voice: {
-      title: "Start AI Intake",
-      description:
-        "Answer simple questions. The assistant prepares the OPD record and routes the patient to a department.",
-      badge: "Voice",
-      ctaLabel: "Start",
-    },
-    manual: {
-      title: "Touch Registration",
-      description:
-        "Use large fields to enter patient details and symptoms with help from staff if needed.",
-      badge: "Simple",
-      ctaLabel: "Start",
-    },
-    doctors: {
-      title: "Hospital Doctors",
-      description:
-        "View available doctors and department coverage for today's OPD.",
-      badge: "Today",
-      ctaLabel: "View",
-    },
-    assistance: {
-      eyebrow: "Need assistance?",
-      title: "Ask the front desk for help at any step.",
-      description:
-        "You can switch between touch and voice, edit details before continuing, and return to this screen whenever needed.",
-    },
-    stats: {
-      specialties: "Specialties",
-      slots: "Tokens",
-      sameDay: "Same day",
-      language: "Language",
-      languageName: "English",
-    },
+  eyebrow: "OPD self check-in",
+  title: "OPD Registration & Triage",
+  subtitle:
+    "Enter a mobile number, describe the health concern, get routed to the right department, and collect a token for the counter.",
+  voice: {
+    title: "Start AI Intake",
+    description:
+      "Answer simple questions. The assistant prepares the OPD record and routes the patient to a department.",
+    badge: "Voice",
+    ctaLabel: "Start",
   },
-  hi: {
-    eyebrow: "सेल्फ चेक-इन कियोस्क",
-    title: "स्मार्ट हॉस्पिटल चेक-इन",
-    subtitle:
-      "टच से रजिस्टर करें या हमारी AI रिसेप्शनिस्ट से बात करें। हम आपको सही स्पेशलिटी, डॉक्टर और आज का स्लॉट चुनने में मदद करेंगे।",
-    voice: {
-      title: "AI रिसेप्शनिस्ट से बात करें",
-      description:
-        "एक बार में एक सवाल का जवाब दें। असिस्टेंट इनटेक में मदद करता है और फॉर्म को जांचना आसान रखता है।",
-      badge: "वॉइस",
-      ctaLabel: "शुरू करें",
-    },
-    manual: {
-      title: "टच से रजिस्टर करें",
-      description:
-        "बड़े टच-फ्रेंडली फील्ड्स से मरीज की जानकारी और लक्षण आराम से भरें।",
-      badge: "सरल",
-      ctaLabel: "शुरू करें",
-    },
-    doctors: {
-      title: "डॉक्टर देखें",
-      description:
-        "रजिस्ट्रेशन से पहले डॉक्टर, स्पेशलिटी, योग्यता और अपॉइंटमेंट विकल्प देखें।",
-      badge: "आज",
-      ctaLabel: "देखें",
-    },
-    assistance: {
-      eyebrow: "मदद चाहिए?",
-      title: "किसी भी स्टेप पर फ्रंट डेस्क से मदद मांगें।",
-      description:
-        "आप टच और वॉइस के बीच बदल सकते हैं, आगे बढ़ने से पहले जानकारी एडिट कर सकते हैं, और जरूरत पड़ने पर इस स्क्रीन पर वापस आ सकते हैं।",
-    },
-    stats: {
-      specialties: "स्पेशलिटी",
-      slots: "स्लॉट",
-      sameDay: "आज ही",
-      language: "भाषा",
-      languageName: "हिंदी",
-    },
+  manual: {
+    title: "Touch Registration",
+    description:
+      "Use large fields to enter patient details and symptoms with help from staff if needed.",
+    badge: "Simple",
+    ctaLabel: "Start",
   },
-} satisfies Record<Language, Record<string, unknown>>;
+  doctors: {
+    title: "Hospital Doctors",
+    description: "View available doctors and department coverage for today's OPD.",
+    badge: "Today",
+    ctaLabel: "View",
+  },
+  assistance: {
+    eyebrow: "Need assistance?",
+    title: "Ask the front desk for help at any step.",
+    description:
+      "You can switch between touch and voice, edit details before continuing, and return to this screen whenever needed.",
+  },
+  stats: {
+    specialties: "Specialties",
+    slots: "Tokens",
+    sameDay: "Same day",
+    intake: "Touch + voice",
+  },
+};
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const [language, setLanguage] = useState<Language>(getStoredLanguage);
   const [session, setSession] = useState(getStoredSession);
   const [loginRole, setLoginRole] = useState<AppRole>("patient");
   const [email, setEmail] = useState("admin@hospital.test");
@@ -125,11 +63,7 @@ export function LandingPage() {
   const [doctorProfilesRequested, setDoctorProfilesRequested] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const copy = landingCopy[language];
-
-  useEffect(() => {
-    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
-  }, [language]);
+  const copy = landingCopy;
 
   useEffect(() => {
     const syncSession = () => setSession(getStoredSession());
@@ -275,7 +209,6 @@ export function LandingPage() {
         eyebrow="Government hospital OPD"
         title="Start OPD check-in."
         subtitle="Patients use mobile number only. Staff use secure demo login for doctor and admin dashboards."
-        actions={<LanguageSelector value={language} onChange={setLanguage} />}
       >
         <section className="mb-6 rounded-lg border border-cyan-100 bg-cyan-50 p-5 shadow-sm">
           <p className="text-sm font-bold uppercase tracking-wide text-brand-700">
@@ -527,7 +460,6 @@ export function LandingPage() {
           ? copy.subtitle
           : "Choose a workspace to manage OPD flow."
       }
-      actions={<LanguageSelector value={language} onChange={setLanguage} />}
     >
       {session.role === "admin" ? (
         <>
@@ -629,7 +561,7 @@ export function LandingPage() {
               {[
                 ["10+", copy.stats.specialties],
                 [copy.stats.sameDay, copy.stats.slots],
-                [copy.stats.languageName, copy.stats.language],
+                [copy.stats.intake, "Input modes"],
               ].map(([value, label]) => (
                 <div
                   key={label}

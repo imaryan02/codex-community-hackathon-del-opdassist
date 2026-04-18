@@ -2,8 +2,15 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { normalizePhone } from "../lib/phone";
 import { getStoredSession, saveSession } from "../lib/session";
+import {
+  deletePatientDocument,
+  getPatientDocuments,
+  renamePatientDocument,
+  uploadPatientDocument,
+} from "../services/patientDocumentService";
 import { getPatientAccountOverview } from "../services/patientHistoryService";
 import { updatePatientProfile } from "../services/patientService";
+import type { DocumentType, PatientDocument } from "../types/document";
 import type { PatientAccountOverview } from "../types/history";
 
 type ProfileEditForm = {
@@ -16,6 +23,13 @@ type ProfileEditForm = {
 type ProfileEditErrors = Partial<Record<keyof ProfileEditForm, string>>;
 
 const genderOptions = ["Male", "Female", "Transgender"];
+const documentTypes: DocumentType[] = [
+  "Prescription",
+  "Lab Report",
+  "Scan",
+  "Discharge Summary",
+  "Other",
+];
 
 function formatDateTime(value: string | null) {
   if (!value) {
@@ -75,6 +89,17 @@ export function PatientDashboardPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isRefreshingRecord, setIsRefreshingRecord] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<PatientDocument[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [documentMessage, setDocumentMessage] = useState<string | null>(null);
+  const [documentTitle, setDocumentTitle] = useState("");
+  const [documentType, setDocumentType] = useState<DocumentType>("Prescription");
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
+  const [editingDocumentTitle, setEditingDocumentTitle] = useState("");
+  const [expandedVisitKey, setExpandedVisitKey] = useState<string | null>(null);
 
   const loadPatientRecord = useCallback(async () => {
     if (!lookup || lookup === "walk-in") {
@@ -104,6 +129,38 @@ export function PatientDashboardPage() {
   useEffect(() => {
     void loadPatientRecord();
   }, [loadPatientRecord]);
+
+  const loadDocuments = useCallback(async () => {
+    const profile = account?.latestProfile;
+
+    if (!profile) {
+      setDocuments([]);
+      return;
+    }
+
+    setIsLoadingDocuments(true);
+    setDocumentError(null);
+
+    try {
+      const nextDocuments = await getPatientDocuments({
+        patientId: profile.patient_id,
+        accountMobile: profile.phone ?? account.lookup,
+      });
+      setDocuments(nextDocuments);
+    } catch (fetchError) {
+      setDocumentError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : "Could not load medical documents.",
+      );
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  }, [account?.latestProfile, account?.lookup]);
+
+  useEffect(() => {
+    void loadDocuments();
+  }, [loadDocuments]);
 
   useEffect(() => {
     const hasPendingToken = account?.history.some(
@@ -301,6 +358,89 @@ export function PatientDashboardPage() {
       );
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const handleDocumentUpload = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!account?.latestProfile) {
+      return;
+    }
+
+    if (!documentFile) {
+      setDocumentError("Choose a PDF or image before uploading.");
+      return;
+    }
+
+    setIsUploadingDocument(true);
+    setDocumentError(null);
+    setDocumentMessage(null);
+
+    try {
+      await uploadPatientDocument({
+        patientId: account.latestProfile.patient_id,
+        accountMobile: account.latestProfile.phone ?? account.lookup,
+        file: documentFile,
+        title: documentTitle.trim() || documentFile.name,
+        documentType,
+      });
+      setDocumentTitle("");
+      setDocumentType("Prescription");
+      setDocumentFile(null);
+      setDocumentMessage("Medical document uploaded.");
+      await loadDocuments();
+    } catch (uploadError) {
+      setDocumentError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Could not upload medical document.",
+      );
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  };
+
+  const handleDocumentRename = async (documentId: string) => {
+    const nextTitle = editingDocumentTitle.trim();
+
+    if (!nextTitle) {
+      setDocumentError("Enter a document title.");
+      return;
+    }
+
+    setDocumentError(null);
+    setDocumentMessage(null);
+
+    try {
+      await renamePatientDocument(documentId, nextTitle);
+      setEditingDocumentId(null);
+      setEditingDocumentTitle("");
+      setDocumentMessage("Document renamed.");
+      await loadDocuments();
+    } catch (renameError) {
+      setDocumentError(
+        renameError instanceof Error
+          ? renameError.message
+          : "Could not rename document.",
+      );
+    }
+  };
+
+  const handleDocumentDelete = async (document: PatientDocument) => {
+    setDocumentError(null);
+    setDocumentMessage(null);
+
+    try {
+      await deletePatientDocument(document);
+      setDocumentMessage("Document deleted.");
+      await loadDocuments();
+    } catch (deleteError) {
+      setDocumentError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Could not delete document.",
+      );
     }
   };
 
@@ -553,6 +693,157 @@ export function PatientDashboardPage() {
             )}
           </aside>
 
+          <div className="space-y-6">
+          <section className="app-card p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-950">
+                  Medical documents
+                </h2>
+                <p className="app-muted mt-1">
+                  Upload old prescriptions, lab reports, scans, or discharge
+                  summaries so the doctor can view them during consultation.
+                </p>
+              </div>
+              <span className="w-fit rounded-lg bg-cyan-50 px-3 py-2 text-xs font-bold text-brand-900">
+                {documents.length} files
+              </span>
+            </div>
+
+            <form
+              onSubmit={handleDocumentUpload}
+              className="mt-5 grid gap-3 rounded-lg border border-cyan-100 bg-cyan-50 p-4 lg:grid-cols-[1fr_0.8fr_1fr_auto]"
+            >
+              <input
+                value={documentTitle}
+                onChange={(event) => setDocumentTitle(event.target.value)}
+                className="min-h-12 rounded-lg border border-slate-300 px-4 text-sm font-semibold outline-none focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
+                placeholder="Document title"
+              />
+              <select
+                value={documentType}
+                onChange={(event) =>
+                  setDocumentType(event.target.value as DocumentType)
+                }
+                className="min-h-12 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
+              >
+                {documentTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="file"
+                accept="application/pdf,image/*"
+                onChange={(event) =>
+                  setDocumentFile(event.target.files?.[0] ?? null)
+                }
+                className="min-h-12 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+              />
+              <button
+                type="submit"
+                disabled={isUploadingDocument}
+                className="min-h-12 rounded-lg bg-brand-700 px-5 text-sm font-bold text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {isUploadingDocument ? "Uploading..." : "Upload"}
+              </button>
+            </form>
+
+            {documentError ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {documentError}
+              </div>
+            ) : null}
+
+            {documentMessage ? (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+                {documentMessage}
+              </div>
+            ) : null}
+
+            {isLoadingDocuments ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                Loading medical documents...
+              </div>
+            ) : null}
+
+            {!isLoadingDocuments && documents.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                No medical documents uploaded yet.
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid gap-3">
+              {documents.map((document) => (
+                <article
+                  key={document.id}
+                  className="rounded-lg border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      {editingDocumentId === document.id ? (
+                        <input
+                          value={editingDocumentTitle}
+                          onChange={(event) =>
+                            setEditingDocumentTitle(event.target.value)
+                          }
+                          className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-semibold outline-none focus:border-brand-600 focus:ring-4 focus:ring-cyan-100"
+                        />
+                      ) : (
+                        <p className="font-bold text-slate-950">
+                          {document.title}
+                        </p>
+                      )}
+                      <p className="mt-1 text-sm text-slate-600">
+                        {document.document_type ?? "Other"} - {document.file_name}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      {document.signed_url ? (
+                        <a
+                          href={document.signed_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-center text-sm font-bold text-slate-800 transition hover:bg-slate-100"
+                        >
+                          Open
+                        </a>
+                      ) : null}
+                      {editingDocumentId === document.id ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDocumentRename(document.id)}
+                          className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-900"
+                        >
+                          Save name
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingDocumentId(document.id);
+                            setEditingDocumentTitle(document.title);
+                          }}
+                          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 transition hover:bg-slate-100"
+                        >
+                          Rename
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void handleDocumentDelete(document)}
+                        className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="app-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -579,59 +870,135 @@ export function PatientDashboardPage() {
             </div>
 
             <div className="mt-5 space-y-4">
-              {account.history.map((visit) => (
-                <article
-                  key={`${visit.patient_id}-${visit.visit_date}`}
-                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="font-bold text-slate-950">
-                        {visit.patient_name} - {formatDateTime(visit.visit_date)}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">
-                        {visit.booking_code ?? "No token yet"}
-                        {visit.token_number ? ` - Token ${visit.token_number}` : ""}
-                      </p>
-                    </div>
-                    <span className="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-brand-900">
-                      {getPatientVisitStatusLabel(
-                        visit.booking_status,
-                        visit.consultation_status,
-                      )}
-                    </span>
-                  </div>
+              {account.history.map((visit) => {
+                const visitKey = `${visit.patient_id}-${visit.visit_date}`;
+                const isExpanded = expandedVisitKey === visitKey;
 
-                  <p className="mt-3 text-sm leading-6 text-slate-700">
-                    {visit.symptom_summary ?? visit.symptom_input}
-                  </p>
+                return (
+                  <article
+                    key={visitKey}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-bold text-slate-950">
+                          {visit.patient_name} - {formatDateTime(visit.visit_date)}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          {visit.booking_code ?? "No token yet"}
+                          {visit.token_number ? ` - Token ${visit.token_number}` : ""}
+                        </p>
+                      </div>
+                      <span className="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-brand-900">
+                        {getPatientVisitStatusLabel(
+                          visit.booking_status,
+                          visit.consultation_status,
+                        )}
+                      </span>
+                    </div>
 
-                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">
-                        Doctor
-                      </p>
-                      <p className="mt-1 text-slate-800">
-                        {visit.doctor_name ?? "Not assigned"} -{" "}
-                        {visit.specialty_name ?? "No specialty"}
-                      </p>
+                    <p className="mt-3 text-sm leading-6 text-slate-700">
+                      {visit.symptom_summary ?? visit.symptom_input}
+                    </p>
+
+                    <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-bold uppercase text-slate-500">
+                          Doctor
+                        </p>
+                        <p className="mt-1 text-slate-800">
+                          {visit.doctor_name ?? "Not assigned"} -{" "}
+                          {visit.specialty_name ?? "No specialty"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase text-slate-500">
+                          Prescription summary
+                        </p>
+                        <p className="mt-1 text-slate-800">
+                          {visit.prescription_text ||
+                            visit.diagnosis ||
+                            visit.follow_up_advice ||
+                            "No prescription saved yet"}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">
-                        Prescription / notes
-                      </p>
-                      <p className="mt-1 text-slate-800">
-                        {visit.prescription_text ||
-                          visit.diagnosis ||
-                          visit.follow_up_advice ||
-                          "No prescription saved yet"}
-                      </p>
-                    </div>
-                  </div>
-                </article>
-              ))}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedVisitKey(isExpanded ? null : visitKey)
+                      }
+                      className="mt-4 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 transition hover:bg-slate-100"
+                    >
+                      {isExpanded ? "Hide details" : "See full consultation details"}
+                    </button>
+
+                    {isExpanded ? (
+                      <div className="mt-4 rounded-lg border border-cyan-100 bg-white p-4">
+                        <div className="grid gap-4 text-sm md:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-bold uppercase text-slate-500">
+                              Diagnosis
+                            </p>
+                            <p className="mt-1 leading-6 text-slate-800">
+                              {visit.diagnosis ?? "No diagnosis saved yet"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase text-slate-500">
+                              Prescription
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap leading-6 text-slate-800">
+                              {visit.prescription_text ??
+                                "No prescription saved yet"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase text-slate-500">
+                              Doctor notes
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap leading-6 text-slate-800">
+                              {visit.notes ?? "No doctor notes saved yet"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase text-slate-500">
+                              Follow-up advice
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap leading-6 text-slate-800">
+                              {visit.follow_up_advice ??
+                                "No follow-up advice saved yet"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase text-slate-500">
+                              Prescription date
+                            </p>
+                            <p className="mt-1 leading-6 text-slate-800">
+                              {formatDateTime(visit.prescription_date)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase text-slate-500">
+                              OPD token status
+                            </p>
+                            <p className="mt-1 leading-6 text-slate-800">
+                              {getPatientVisitStatusLabel(
+                                visit.booking_status,
+                                visit.consultation_status,
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
             </div>
           </section>
+          </div>
         </div>
       ) : null}
     </section>
