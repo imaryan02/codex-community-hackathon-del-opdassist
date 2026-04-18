@@ -128,6 +128,19 @@ export function AppShell() {
       <main className="mx-auto max-w-6xl px-4 py-8 sm:py-10">
         <Outlet />
       </main>
+      <footer className="border-t border-slate-200 bg-white px-4 py-6">
+        <div className="mx-auto max-w-6xl text-center text-sm font-semibold text-slate-600">
+          Created by{" "}
+          <a
+            href="https://www.linkedin.com/in/imaryan02/"
+            target="_blank"
+            rel="noreferrer"
+            className="font-black text-brand-900 transition hover:text-brand-700"
+          >
+            Aryan Gupta
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }

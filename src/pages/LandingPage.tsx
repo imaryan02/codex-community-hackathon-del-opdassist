@@ -205,96 +205,137 @@ export function LandingPage() {
 
   if (!session) {
     return (
-      <KioskShell
-        eyebrow="Government hospital OPD"
-        title="Start OPD check-in."
-        subtitle="Patients use mobile number only. Staff use secure demo login for doctor and admin dashboards."
-      >
-        <section className="mb-6 rounded-lg border border-cyan-100 bg-cyan-50 p-5 shadow-sm">
-          <p className="text-sm font-bold uppercase tracking-wide text-brand-700">
-            Problem statement
-          </p>
-          <div className="mt-3 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-            <div>
-              <p className="text-xl font-black text-slate-950">
-                Government OPDs face crowding, repeated paperwork, and weak
-                visit continuity.
+      <section className="space-y-6">
+        <section
+          className="relative overflow-hidden rounded-lg bg-slate-900 text-white shadow-sm"
+          style={{
+            backgroundImage:
+              "linear-gradient(90deg, rgba(6, 78, 59, 0.92), rgba(15, 118, 110, 0.74), rgba(15, 23, 42, 0.24)), url('https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=1800&q=80')",
+            backgroundPosition: "center",
+            backgroundSize: "cover",
+          }}
+        >
+          <div className="min-h-[330px] px-5 py-8 sm:min-h-[430px] sm:px-8 lg:px-10 lg:py-12">
+            <div className="max-w-3xl">
+              <p className="text-sm font-bold uppercase">Government hospital OPD</p>
+              <h1 className="mt-4 text-4xl font-black leading-tight sm:text-5xl">
+                AI powered kiosk for faster OPD check-in.
+              </h1>
+              <p className="mt-5 max-w-2xl text-lg leading-8 text-cyan-50">
+                Patients use mobile login, touch or voice intake, AI department
+                routing, reception-approved tokens, doctor queue, prescriptions,
+                and repeat visit history in one flow.
               </p>
-              <p className="mt-2 text-sm leading-6 text-slate-700">
-                Patients stand in multiple queues, repeat symptoms, and often do
-                not know which doctor is available. Reception teams manually
-                coordinate tokens and slots while doctors receive limited
-                context.
-              </p>
-            </div>
-            <div className="rounded-lg border border-white bg-white p-4 text-sm leading-6 text-brand-900 shadow-sm">
-              <p className="font-black uppercase tracking-wide">Our solution</p>
-              <p className="mt-2">
-                OPD Assist connects patient check-in, AI intake, department
-                routing, token approval, doctor queue, prescription, and repeat
-                visit history in one simple hospital workflow.
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
-            {[
-              ["Patient", "Mobile login, reusable record, token status."],
-              ["Reception", "Approve tokens, manage doctors, open OPD times."],
-              ["Doctor", "Approved queue, AI summary, history, prescription."],
-              ["Hospital", "Less repetition, better visibility, cleaner flow."],
-            ].map(([label, text]) => (
-              <div key={label} className="rounded-lg bg-white p-3 shadow-sm">
-                <p className="font-bold text-slate-950">{label}</p>
-                <p className="mt-1 leading-5 text-slate-600">{text}</p>
+              <div className="mt-7 flex flex-wrap gap-3 text-sm font-bold">
+                {[
+                  "Mobile record",
+                  "AI triage",
+                  "Admin approval",
+                  "Doctor history",
+                ].map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-lg border border-white/30 bg-white/15 px-4 py-2 text-white backdrop-blur"
+                  >
+                    {item}
+                  </span>
+                ))}
               </div>
-            ))}
+              <a
+                href="#opd-login"
+                className="mt-8 inline-flex min-h-12 items-center rounded-lg bg-white px-5 text-sm font-black text-emerald-900 transition hover:bg-emerald-50"
+              >
+                Start check-in
+              </a>
+            </div>
           </div>
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-            <p className="text-sm font-bold uppercase tracking-wide text-brand-700">
-              OPD access
-            </p>
-            <h2 className="mt-3 text-3xl font-bold text-slate-950">
-              Simple entry for patients. Separate workspaces for staff.
-            </h2>
-            <p className="mt-4 text-sm leading-6 text-slate-600">
-              Returning patients can open their health record. New patients go
-              directly to AI intake and receive an OPD token after routing.
-            </p>
-            <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-              <p className="font-black uppercase tracking-wide">
-                Prototype auth note
+        <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="order-2 grid gap-6 lg:order-1">
+            <section className="rounded-lg border border-cyan-100 bg-white p-6 shadow-sm">
+              <p className="text-sm font-black uppercase text-brand-700">
+                Problem and solution
               </p>
-              <p className="mt-1">
-                This prototype uses mobile number for fast check-in.
-                Production will use mobile OTP, staff accounts, and database
-                access rules so patients see only their own records and doctors
-                see only assigned OPD cases.
+              <h2 className="mt-3 text-3xl font-black text-slate-950">
+                A faster OPD journey for patients, reception, and doctors.
+              </h2>
+              <p className="mt-4 text-sm leading-6 text-slate-600">
+                Government hospital OPDs handle heavy patient flow every day.
+                Patients stand in queues, repeat the same details, struggle to
+                find the right department, and carry old reports manually.
+                Doctors often see the patient with limited history and little
+                time.
               </p>
-            </div>
-            <div className="mt-5 grid gap-3 text-sm">
-              <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-4">
-                <p className="font-bold text-brand-900">Admin demo login</p>
-                <p className="mt-1 text-slate-700">
-                  admin@hospital.test / admin123
-                </p>
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                OPD Assist solves this with a kiosk-style system: mobile login,
+                guided voice or touch intake, AI department routing, available
+                doctor selection, reception-approved tokens, medical document
+                storage, and a complete doctor view with past visits.
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {[
+                  ["For patients", "Simple mobile login, guided intake, token status, and saved records."],
+                  ["For reception", "Approve OPD tokens, manage doctors, and control slot availability."],
+                  ["For doctors", "See approved patients with AI summary, history, and uploaded reports."],
+                  ["For hospitals", "Reduce repeated paperwork and create a scalable digital OPD flow."],
+                ].map(([label, text]) => (
+                  <div
+                    key={label}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <p className="font-black text-slate-950">{label}</p>
+                    <p className="mt-1 text-sm leading-5 text-slate-600">
+                      {text}
+                    </p>
+                  </div>
+                ))}
               </div>
-              <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-4">
-                <p className="font-bold text-brand-900">Doctor demo login</p>
-                <p className="mt-1 text-slate-700">
-                  doctor@hospital.test / doctor123
-                </p>
+            </section>
+
+            <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+              <img
+                src="https://images.unsplash.com/photo-1584515933487-779824d29309?auto=format&fit=crop&w=1200&q=80"
+                alt="Hospital team preparing patient intake"
+                className="h-52 w-full object-cover"
+              />
+              <div className="grid gap-4 p-6 sm:grid-cols-3">
+                {[
+                  ["1", "Patient enters mobile number"],
+                  ["2", "AI routes the OPD visit"],
+                  ["3", "Doctor sees approved case"],
+                ].map(([step, text]) => (
+                  <div key={step}>
+                    <p className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-sm font-black text-white">
+                      {step}
+                    </p>
+                    <p className="mt-3 text-sm font-bold leading-6 text-slate-800">
+                      {text}
+                    </p>
+                  </div>
+                ))}
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
 
           <form
+            id="opd-login"
             onSubmit={handleLogin}
-            className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+            className="order-1 rounded-lg border border-slate-200 bg-white p-6 shadow-lg shadow-cyan-900/10 lg:order-2"
           >
-            <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-bold">
+            <p className="text-sm font-black uppercase text-brand-700">
+              Secure OPD access
+            </p>
+            <h2 className="mt-2 text-3xl font-black text-slate-950">
+              Start with the right workspace.
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Patients continue with a mobile number. Reception and doctors use
+              separate workspaces to manage approvals, queues, and consultation
+              records.
+            </p>
+
+            <div className="mt-6 grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-bold">
               {[
                 { label: "Patient", value: "patient" },
                 { label: "Doctor", value: "doctor" },
@@ -305,7 +346,7 @@ export function LandingPage() {
                   type="button"
                   onClick={() => handleRoleChange(option.value as AppRole)}
                   className={[
-                    "rounded-md px-3 py-3 transition",
+                    "min-h-12 rounded-lg px-3 transition",
                     loginRole === option.value
                       ? "bg-brand-700 text-white"
                       : "text-slate-600 hover:bg-white",
@@ -317,7 +358,7 @@ export function LandingPage() {
             </div>
 
             {loginRole === "patient" ? (
-              <label className="mt-5 block">
+              <label className="mt-6 block">
                 <span className="text-sm font-bold text-slate-900">
                   Mobile number
                 </span>
@@ -335,7 +376,7 @@ export function LandingPage() {
                 </p>
               </label>
             ) : (
-              <div className="mt-5 grid gap-4">
+              <div className="mt-6 grid gap-4">
                 <label className="block">
                   <span className="text-sm font-bold text-slate-900">
                     Staff email
@@ -389,11 +430,6 @@ export function LandingPage() {
                     >
                       {isLoadingDoctors ? "Loading profiles..." : "Reload doctor profiles"}
                     </button>
-                    <p className="mt-2 text-xs leading-5 text-slate-500">
-                      In production, each doctor signs into their own hospital
-                      account. This selector lets the prototype show multiple
-                      doctor identities.
-                    </p>
                   </div>
                 ) : null}
               </div>
@@ -408,7 +444,7 @@ export function LandingPage() {
             <button
               type="submit"
               disabled={isLoggingIn || isLoadingDoctors}
-              className="mt-6 w-full rounded-lg bg-brand-700 px-5 py-4 text-base font-bold text-white shadow-sm transition hover:bg-brand-900"
+              className="mt-6 w-full rounded-lg bg-brand-700 px-5 py-4 text-base font-black text-white shadow-sm transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
               {isLoggingIn
                 ? "Checking account..."
@@ -416,38 +452,52 @@ export function LandingPage() {
                   ? "Loading doctor profiles..."
                   : "Continue"}
             </button>
-          </form>
-        </div>
 
-        <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-bold uppercase tracking-wide text-brand-700">
-            Platform flow
-          </p>
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div>
-              <p className="font-bold text-slate-950">Patient check-in</p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Mobile number opens the health record. AI intake captures the
-                current concern and creates a same-day token.
+            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              <p className="font-black uppercase">Prototype login note</p>
+              <p className="mt-1">
+                This demo uses mobile number login for patients. Production will
+                use OTP verification, staff accounts, and strict database access
+                rules for health records.
               </p>
             </div>
-            <div>
-              <p className="font-bold text-slate-950">Reception control</p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Admin verifies tokens, manages doctor availability, and keeps OPD
-                times ready for high-volume hospital flow.
-              </p>
+
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-4">
+                <p className="font-black text-brand-900">Admin demo</p>
+                <p className="mt-1 font-semibold text-slate-800">
+                  admin@hospital.test
+                </p>
+                <p className="text-slate-600">admin123</p>
+              </div>
+              <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-4">
+                <p className="font-black text-brand-900">Doctor demo</p>
+                <p className="mt-1 font-semibold text-slate-800">
+                  doctor@hospital.test
+                </p>
+                <p className="text-slate-600">doctor123</p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold text-slate-950">Doctor workspace</p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Approved tokens reach the doctor queue with AI summary, patient
-                history, and a digital prescription workspace.
-              </p>
-            </div>
-          </div>
+          </form>
         </section>
-      </KioskShell>
+
+        <section className="grid gap-4 md:grid-cols-4">
+          {[
+            ["AI intake", "Voice and touch forms for fast OPD registration."],
+            ["Token approval", "Reception verifies tokens before doctor queue."],
+            ["Health record", "Past visits, prescriptions, and files stay linked."],
+            ["Doctor view", "Approved cases include AI summary and history."],
+          ].map(([title, body]) => (
+            <article
+              key={title}
+              className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <p className="font-black text-slate-950">{title}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{body}</p>
+            </article>
+          ))}
+        </section>
+      </section>
     );
   }
 

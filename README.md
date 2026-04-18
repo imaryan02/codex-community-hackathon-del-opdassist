@@ -4,6 +4,8 @@ Demo video: https://drive.google.com/drive/folders/1eAIjvRHehIfvx2AgY2UQW9hq5oXr
 
 OPD Assist is a simple kiosk-style system built for government hospital OPD workflows. It helps patients check in using a mobile number, complete a guided AI intake, find available doctors, request an OPD token, and continue their medical record across repeat visits.
 
+Patients can also upload old medical documents such as prescriptions, lab reports, scans, discharge summaries, and images. These files stay linked to their health record and can be viewed by the doctor during consultation.
+
 The project is hosted on Vercel and built as a working prototype for jury evaluation.
 
 ## Problem Statement
@@ -26,6 +28,8 @@ Admin staff can manage doctors, slots, availability, and approve tokens. Doctors
 - Reception/admin approval for OPD tokens
 - Patient health record linked to mobile number
 - Previous visit history visible to patients and doctors
+- Upload, view, rename, and delete old medical documents
+- Doctor reference view for patient-uploaded reports and prescriptions
 - Doctor dashboard for approved OPD queue
 - Digital prescription and consultation notes
 - Admin dashboard to manage doctors, slots, and token approvals
@@ -41,6 +45,8 @@ Admin staff can manage doctors, slots, availability, and approve tokens. Doctors
 - Gets AI-based department guidance
 - Requests token for a doctor slot
 - Views previous visits and prescriptions
+- Uploads old prescriptions, lab reports, scans, and discharge summaries
+- Manages uploaded medical files from the health record
 
 ### Admin / Reception
 
@@ -56,6 +62,7 @@ Admin staff can manage doctors, slots, availability, and approve tokens. Doctors
 - Selects doctor profile
 - Views only approved OPD tokens
 - Sees patient details, AI summary, and past visit history
+- Views patient-uploaded medical documents for reference
 - Adds diagnosis, prescription, notes, and follow-up advice
 
 ## Application Flow
@@ -72,6 +79,7 @@ Admin staff can manage doctors, slots, availability, and approve tokens. Doctors
 10. Doctor sees the patient in the approved queue.
 11. Doctor completes consultation and saves prescription.
 12. Visit is stored in the patient's health record for future visits.
+13. Patient can upload old medical documents, and doctors can refer to them during future consultations.
 
 ## Tech Stack
 
@@ -134,6 +142,9 @@ The app uses Supabase tables for:
 - AI intake reports
 - bookings
 - prescriptions
+- patient documents
+
+Patient medical files are stored in Supabase Storage using the `patient-documents` bucket. File metadata is stored in the `patient_documents` table.
 
 RLS policies for the prototype are available in:
 
