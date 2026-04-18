@@ -1,4 +1,6 @@
-# OPD Assist - AI Powered Hospital Kiosk System
+a# OPD Assist - AI Powered Hospital Kiosk System
+
+Live demo: https://ai-health-two-kappa.vercel.app/
 
 Demo video: https://drive.google.com/drive/folders/1eAIjvRHehIfvx2AgY2UQW9hq5oXrDn8j?usp=sharing
 
